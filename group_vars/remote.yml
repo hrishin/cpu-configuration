@@ -1,0 +1,13 @@
+---
+# Example configuration for remote hosts
+# This file demonstrates how to override settings for the 'remote' group
+
+# Enable all roles for remote hosts
+install_dependencies_enabled: true
+configure_housekeeping_enabled: true
+
+# Enable all components for production remote hosts
+configure_housekeeping_kernel_boot_args: true
+configure_housekeeping_sysctl: true
+configure_housekeeping_scripts: true
+configure_housekeeping_service: true

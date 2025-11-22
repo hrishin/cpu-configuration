@@ -1,0 +1,93 @@
+---
+- name: Ensure /usr/local/bin directory exists
+  file:
+    path: /usr/local/bin
+    state: directory
+    mode: '0755'
+
+- name: Install tracing and profiling packages
+  package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - libbpf-tools
+    - bpftrace
+    - trace-cmd
+    - grubby
+  when: ansible_facts["os_family"] == "RedHat"
+  ignore_errors: "{{ ignore_package_errors | default(false) }}"
+  register: package_install_result
+  failed_when: false
+  changed_when: package_install_result.results | selectattr('failed', 'equalto', false) | list | length > 0
+
+- name: Display package installation results
+  debug:
+    msg: "Package '{{ item.item }}': {{ 'installed' if not item.failed else 'failed or not available' }}"
+  loop: "{{ package_install_result.results | default([]) }}"
+  when: 
+    - package_install_result is defined
+    - package_install_result.results is defined
+
+- name: Check if sysjitter is already installed
+  stat:
+    path: /usr/local/bin/sysjitter
+  register: sysjitter_installed
+
+- name: Install build dependencies for cns-sysjitter
+  package:
+    name:
+      - gcc
+      - make
+      - git
+    state: present
+  when: not sysjitter_installed.stat.exists
+
+- name: Clone cns-sysjitter repository
+  git:
+    repo: https://github.com/Xilinx-CNS/cns-sysjitter.git
+    dest: /tmp/cns-sysjitter
+    version: master
+    force: yes
+  register: git_clone_result
+  when: not sysjitter_installed.stat.exists
+
+- name: Check if sysjitter binary exists in build directory
+  stat:
+    path: /tmp/cns-sysjitter/sysjitter
+  register: binary_stat
+  when: not sysjitter_installed.stat.exists
+
+- name: Build cns-sysjitter
+  make:
+    chdir: /tmp/cns-sysjitter
+    target: all
+  when: 
+    - not sysjitter_installed.stat.exists
+    - git_clone_result.changed or not binary_stat.stat.exists
+
+- name: Verify sysjitter binary exists after build
+  stat:
+    path: /tmp/cns-sysjitter/sysjitter
+  register: binary_stat_after_build
+  when: not sysjitter_installed.stat.exists
+
+- name: Install sysjitter binary to /usr/local/bin
+  copy:
+    src: /tmp/cns-sysjitter/sysjitter
+    dest: /usr/local/bin/sysjitter
+    mode: '0755'
+    remote_src: yes
+  when: 
+    - not sysjitter_installed.stat.exists
+    - binary_stat_after_build is defined
+    - binary_stat_after_build.stat.exists | default(false)
+
+- name: Verify final sysjitter installation
+  stat:
+    path: /usr/local/bin/sysjitter
+  register: final_sysjitter_check
+
+- name: Display sysjitter installation status
+  debug:
+    msg: "sysjitter {{ 'already installed' if sysjitter_installed.stat.exists else 'installed successfully' }} at /usr/local/bin/sysjitter and is available for all users"
+  when: final_sysjitter_check.stat.exists

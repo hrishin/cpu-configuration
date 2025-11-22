@@ -1,10 +1,15 @@
 # Example Ansible inventory file
 # Usage: ansible-playbook -i inventory.example configure-housekeeping.yml
+#
+# Group variables are defined in group_vars/ directory:
+# - group_vars/all.yml - applies to all hosts
+# - group_vars/local.yml - applies to hosts in [local] group
+# - group_vars/remote.yml - applies to hosts in [remote] group
 
 [local]
 localhost ansible_connection=local
 
-# [remote]
+[remote]
 # host1 ansible_host=192.168.1.10 ansible_user=ec2-user
 # host2 ansible_host=192.168.1.11 ansible_user=ec2-user
 
