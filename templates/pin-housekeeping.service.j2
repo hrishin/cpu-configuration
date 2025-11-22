@@ -1,0 +1,13 @@
+[Unit]
+Description=Pin kernel housekeeping threads and IRQs
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pin_housekeeping.sh
+ExecStart=/usr/local/sbin/set_irq_affinity.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+

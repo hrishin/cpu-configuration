@@ -1,0 +1,238 @@
+---
+- name: Configure kernel boot arguments, sysctl, and housekeeping service
+  hosts: all
+  become: yes
+  gather_facts: yes
+  vars:
+    # Paths for scripts and service file
+    pin_housekeeping_script_path: /usr/local/sbin/pin_housekeeping.sh
+    set_irq_affinity_script_path: /usr/local/sbin/set_irq_affinity.sh
+    trace_jitter_script_path: /usr/local/bin/trace_jitter.sh
+    systemd_service_path: /etc/systemd/system/pin-housekeeping.service
+    
+    # Default boot parameters
+    default_boot_params: "crashkernel=auto rashkernel=auto biosdevname=1 net.ifnames=0 quiet LANG=en_US.UTF-8 transparent_hugepage=never elevator=deadline nosoftlockup mce=ignore_ce ipv6.disable=1 printk.time audit=1 isolcpus=domain,nohz,managed_irq,2-11,14-23 nohz_full=2-11,14-23 rcu_nocbs=2-11,14-23 irqaffinity=0,1,12,13 mitigations=off maxcpus=24 nosmt tsc=reliable nmi_watchdog=0 watchdog=0 intel_idle.max_cstate=1 processor.max_cstate=1 skew_tick=1 intel_pstate=passive idle=halt"
+    
+    # Optional: Override boot args if needed (otherwise captured from target, or uses default_boot_params)
+    kernel_boot_args: ""
+    
+    # Default sysctl settings
+    default_sysctl_settings:
+      kernel.numa_balancing: 0
+      kernel.sched_rt_runtime_us: -1
+      kernel.timer_migration: 0
+      kernel.soft_watchdog: 0
+      vm.stat_interval: 60
+    
+    # Optional: Override sysctl settings if needed (otherwise uses default_sysctl_settings)
+    sysctl_settings: {}
+    
+    # Housekeeping CPUs configuration
+    hk_cpus: "0,1,12,13"
+    
+    # Isolated CPUs range for trace_jitter.sh (default: 2-7, can be overridden)
+    isolated_cpu_start: 2
+    isolated_cpu_end: 7
+    
+  tasks:
+    - name: Check if grubby is installed
+      package:
+        name: grubby
+        state: present
+      when: ansible_facts["os_family"] == "RedHat"
+
+    - name: Read current boot arguments from /proc/cmdline
+      slurp:
+        src: /proc/cmdline
+      register: cmdline_file
+      when: kernel_boot_args == ""
+
+    - name: Extract kernel boot parameters (exclude BOOT_IMAGE and root=)
+      set_fact:
+        current_boot_args: "{{ cmdline_file.content | b64decode | trim | regex_replace('BOOT_IMAGE=[^\\s]+', '') | regex_replace('root=[^\\s]+', '') | regex_replace('\\s+', ' ') | trim }}"
+      when: 
+        - kernel_boot_args == ""
+        - cmdline_file is defined
+
+    - name: Use provided boot args if specified
+      set_fact:
+        current_boot_args: "{{ kernel_boot_args }}"
+      when: kernel_boot_args != ""
+
+    - name: Use default boot params if no boot args captured or provided
+      set_fact:
+        current_boot_args: "{{ default_boot_params }}"
+      when: 
+        - kernel_boot_args == ""
+        - current_boot_args is not defined or current_boot_args == ""
+
+    - name: Display extracted boot arguments
+      debug:
+        msg: "Kernel boot parameters to apply: {{ current_boot_args }}"
+
+    - name: Get current default kernel args
+      command: grubby --info=DEFAULT
+      register: current_default_args
+      changed_when: false
+      failed_when: false
+      when: ansible_facts["os_family"] == "RedHat"
+
+    - name: Extract existing args from default kernel
+      set_fact:
+        existing_default_args_raw: "{{ current_default_args.stdout | regex_search('args=\"([^\"]+)\"', '\\1') | default('') }}"
+      when: 
+        - ansible_facts["os_family"] == "RedHat"
+        - current_default_args is defined
+
+    - name: Normalize existing and desired boot args for comparison
+      set_fact:
+        existing_default_args_normalized: "{{ existing_default_args_raw | default('') | trim | regex_replace('\\s+', ' ') }}"
+        desired_boot_args_normalized: "{{ current_boot_args | default('') | trim | regex_replace('\\s+', ' ') }}"
+      when: 
+        - ansible_facts["os_family"] == "RedHat"
+        - current_boot_args is defined
+
+    - name: Check if default kernel args need updating
+      set_fact:
+        default_args_changed: "{{ existing_default_args_normalized | default('') != desired_boot_args_normalized | default('') }}"
+      when: 
+        - ansible_facts["os_family"] == "RedHat"
+        - current_boot_args is defined
+        - existing_default_args_normalized is defined
+        - desired_boot_args_normalized is defined
+
+    - name: Set default_args_changed to true if comparison wasn't done
+      set_fact:
+        default_args_changed: true
+      when: 
+        - ansible_facts["os_family"] == "RedHat"
+        - current_boot_args is defined
+        - default_args_changed is not defined
+
+    - name: Apply kernel boot arguments to default kernel using grubby
+      shell: |
+        grubby --update-kernel=DEFAULT --args="{{ current_boot_args }}"
+      register: grubby_default_result
+      changed_when: 
+        - default_args_changed | bool
+        - "'No changes were made' not in (grubby_default_result.stdout | default(''))"
+      when: 
+        - ansible_facts["os_family"] == "RedHat"
+        - current_boot_args is defined
+        - default_args_changed | bool
+      failed_when: false
+
+    - name: Apply kernel boot arguments to all kernels using grubby
+      shell: |
+        grubby --update-kernel=ALL --args="{{ current_boot_args }}"
+      register: grubby_all_result
+      changed_when: 
+        - default_args_changed | bool
+        - "'No changes were made' not in (grubby_all_result.stdout | default(''))"
+      when: 
+        - ansible_facts["os_family"] == "RedHat"
+        - current_boot_args is defined
+        - default_args_changed | bool
+      failed_when: false
+
+    - name: Verify grubby update results
+      debug:
+        msg: |
+          Default kernel update: {{ grubby_default_result.stdout | default('N/A') }}
+          All kernels update: {{ grubby_all_result.stdout | default('N/A') }}
+      when: 
+        - ansible_facts["os_family"] == "RedHat"
+        - grubby_default_result is defined or grubby_all_result is defined
+
+    - name: Determine which sysctl settings to use
+      set_fact:
+        final_sysctl_settings: "{{ sysctl_settings if sysctl_settings | length > 0 else default_sysctl_settings }}"
+
+    - name: Display sysctl settings to apply
+      debug:
+        msg: "Applying sysctl settings: {{ final_sysctl_settings }}"
+
+    - name: Apply sysctl settings
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value | string }}"
+        state: present
+        sysctl_set: yes
+        reload: yes
+      loop: "{{ final_sysctl_settings | dict2items }}"
+
+    - name: Save sysctl settings to /etc/sysctl.d/99-housekeeping.conf
+      copy:
+        content: |
+          # Sysctl settings for housekeeping CPUs
+          {% for key, value in final_sysctl_settings.items() %}
+          {{ key }} = {{ value }}
+          {% endfor %}
+        dest: /etc/sysctl.d/99-housekeeping.conf
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Verify sysctl settings file
+      command: sysctl -p /etc/sysctl.d/99-housekeeping.conf
+      register: sysctl_verify_result
+      changed_when: false
+      failed_when: false
+
+    - name: Ensure /usr/local/sbin directory exists
+      file:
+        path: /usr/local/sbin
+        state: directory
+        mode: '0755'
+
+    - name: Ensure /usr/local/bin directory exists
+      file:
+        path: /usr/local/bin
+        state: directory
+        mode: '0755'
+
+    - name: Deploy pin_housekeeping.sh script
+      template:
+        src: pin_housekeeping.sh.j2
+        dest: "{{ pin_housekeeping_script_path }}"
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Deploy set_irq_affinity.sh script
+      template:
+        src: set_irq_affinity.sh.j2
+        dest: "{{ set_irq_affinity_script_path }}"
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Deploy trace_jitter.sh script
+      template:
+        src: trace_jitter.sh.j2
+        dest: "{{ trace_jitter_script_path }}"
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Deploy pin-housekeeping.service
+      template:
+        src: pin-housekeeping.service.j2
+        dest: "{{ systemd_service_path }}"
+        mode: '0644'
+        owner: root
+        group: root
+      notify: reload systemd
+
+    - name: Enable and start pin-housekeeping service
+      systemd:
+        name: pin-housekeeping
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+  handlers:
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+

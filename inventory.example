@@ -1,0 +1,10 @@
+# Example Ansible inventory file
+# Usage: ansible-playbook -i inventory.example configure-housekeeping.yml
+
+[local]
+localhost ansible_connection=local
+
+# [remote]
+# host1 ansible_host=192.168.1.10 ansible_user=ec2-user
+# host2 ansible_host=192.168.1.11 ansible_user=ec2-user
+

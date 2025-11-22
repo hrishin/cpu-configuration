@@ -1,0 +1,58 @@
+#!/usr/bin/env bpftrace
+
+BEGIN
+{
+    printf("Tracing timer, irq, sched, and rcu events... Hit Ctrl-C to end.\n");
+    printf("%-18s %-4s %-6s %-16s %s\n", "TIME(ns)", "CPU", "PID", "COMM", "EVENT DETAILS");
+}
+
+/* FILTER: Only show events for isolated CPUs ({{ isolated_cpu_start }}-{{ isolated_cpu_end }}) to reduce noise */
+/* Remove the filter lines if you want to see all CPUs */
+
+/* --- HRTIMERS --- */
+
+tracepoint:timer:hrtimer_start
+/cpu >= {{ isolated_cpu_start }} && cpu <= {{ isolated_cpu_end }}/
+{
+    printf("%-18lld %-4d %-6d %-16s hrtimer_start: func=%s expires=%llu ptr=%p\n", 
+           nsecs, cpu, pid, comm, ksym(args->function), args->expires, args->hrtimer);
+}
+
+tracepoint:timer:hrtimer_expire_entry
+/cpu >= {{ isolated_cpu_start }} && cpu <= {{ isolated_cpu_end }}/
+{
+    printf("%-18lld %-4d %-6d %-16s hrtimer_expire_entry: func=%s ptr=%p\n", 
+           nsecs, cpu, pid, comm, ksym(args->function), args->hrtimer);
+}
+
+tracepoint:timer:hrtimer_cancel
+/cpu >= {{ isolated_cpu_start }} && cpu <= {{ isolated_cpu_end }}/
+{
+    printf("%-18lld %-4d %-6d %-16s hrtimer_cancel: ptr=%p\n", 
+           nsecs, cpu, pid, comm, args->hrtimer);
+}
+
+/* --- IRQ --- */
+tracepoint:irq:irq_handler_entry
+/cpu >= {{ isolated_cpu_start }} && cpu <= {{ isolated_cpu_end }}/
+{
+    printf("%-18lld %-4d %-6d %-16s irq_entry: irq=%d name=%s\n", 
+           nsecs, cpu, pid, comm, args->irq, args->name);
+}
+
+/* --- SCHEDULER --- */
+tracepoint:sched:sched_switch
+/cpu >= {{ isolated_cpu_start }} && cpu <= {{ isolated_cpu_end }}/
+{
+    printf("%-18lld %-4d %-6d %-16s sched_switch: %s:%d -> %s:%d\n", 
+           nsecs, cpu, pid, comm, args->prev_comm, args->prev_pid, args->next_comm, args->next_pid);
+}
+
+/* --- RCU --- */
+tracepoint:rcu:rcu_utilization
+/cpu >= {{ isolated_cpu_start }} && cpu <= {{ isolated_cpu_end }}/
+{
+    printf("%-18lld %-4d %-6d %-16s rcu_utilization: %s\n", 
+           nsecs, cpu, pid, comm, args->s);
+}
+

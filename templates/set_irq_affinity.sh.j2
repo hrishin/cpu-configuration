@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# CPUs that should handle housekeeping interrupts.
+HK_CPUS="${HK_CPUS:-{{ hk_cpus }}}"
+# If IRQ_LIST isn't provided, detect all eth0 MSI-X vectors automatically.
+detect_irqs() {
+  awk '/eth0-Tx-Rx/ {gsub(":", "", $1); print $1}' /proc/interrupts
+}
+
+# IRQ numbers to pin (space-separated). Override with IRQ_LIST env var; otherwise auto-detect.
+if [[ -n "${IRQ_LIST:-}" ]]; then
+  IRQ_LIST_EXPANDED="${IRQ_LIST}"
+else
+  if ! IRQ_LIST_EXPANDED=$(detect_irqs); then
+    echo "Failed to detect IRQs from /proc/interrupts" >&2
+    exit 1
+  fi
+fi
+
+pin_irq() {
+  local irq="$1"
+  local path="/proc/irq/${irq}/smp_affinity_list"
+  if [[ ! -e "${path}" ]]; then
+    echo "IRQ ${irq}: ${path} not found" >&2
+    return
+  fi
+  if [[ ! -w "${path}" ]]; then
+    echo "IRQ ${irq}: insufficient permissions to write ${path}" >&2
+    return
+  fi
+  echo "${HK_CPUS}" > "${path}"
+  printf 'Pinned IRQ %-4s to CPUs %s\n' "${irq}" "${HK_CPUS}"
+}
+
+if [[ -z "${IRQ_LIST_EXPANDED}" ]]; then
+  echo "No IRQs matched; nothing to pin." >&2
+  exit 0
+fi
+
+for irq in ${IRQ_LIST_EXPANDED}; do
+  pin_irq "${irq}"
+done
+
+echo "IRQ affinity update complete."
+
