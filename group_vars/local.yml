@@ -11,4 +11,4 @@ configure_housekeeping_kernel_boot_args: false
 configure_housekeeping_sysctl: true
 configure_housekeeping_scripts: true
 configure_housekeeping_service: true
-kernel_boot_args: "crashkernel=auto biosdevname=1 net.ifnames=0 quiet LANG=en_US.UTF-8 transparent_hugepage=never elevator=deadline nosoftlockup mce=ignore_ce ipv6.disable=1 printk.time audit=1 isolcpus=domain,nohz,managed_irq,2-11,14-23 nohz_full=2-11,14-23 rcu_nocbs=2-11,14-23 irqaffinity=0,1,12,13 mitigations=off maxcpus=24 nosmt tsc=reliable nmi_watchdog=0 watchdog=0 intel_idle.max_cstate=1 processor.max_cstate=1 skew_tick=1 intel_pstate=passive idle=halt"
+kernel_boot_args: "crashkernel=auto biosdevname=1 net.ifnames=0 quiet LANG=en_US.UTF-8 transparent_hugepage=never elevator=deadline nosoftlockup mce=ignore_ce ipv6.disable=1 printk.time audit=0 isolcpus=domain,nohz,managed_irq,2-11,14-23 nohz_full=2-11,14-23 rcu_nocbs=2-11,14-23 irqaffinity=0,1,12,13 mitigations=off maxcpus=24 nosmt tsc=reliable nmi_watchdog=0 watchdog=0 intel_idle.max_cstate=1 processor.max_cstate=1 skew_tick=1 intel_pstate=passive idle=halt"
