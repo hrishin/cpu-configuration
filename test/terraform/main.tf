@@ -159,6 +159,12 @@ resource "aws_instance" "bench" {
   tags        = local.tags
   volume_tags = local.tags
 
+  # The provider retries InsufficientInstanceCapacity until this expires; metal spot
+  # capacity is AZ-dependent, so fail fast and try another AZ instead of looping.
+  timeouts {
+    create = "12m"
+  }
+
   lifecycle {
     ignore_changes = [ami] # don't replace a running box because a newer Rocky AMI appeared
   }

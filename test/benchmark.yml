@@ -14,6 +14,9 @@
     sysjitter_cores: "{{ isolated_cores }}"
     sysjitter_bin: /usr/local/bin/sysjitter
     results_dir: "test/results/latest"
+    # delegate_to: localhost runs modules from Ansible's temp dir, so resolve relative
+    # paths against the controller's cwd (the repo root) before using them.
+    results_dir_abs: "{{ results_dir | realpath }}"
     remote_out: "/tmp/sysjitter-{{ phase }}.txt"
   tasks:
     - name: Ensure sysjitter is installed
@@ -60,12 +63,20 @@
       register: b_sysjitter_out
       changed_when: false
 
+    - name: Create local results directory
+      delegate_to: localhost
+      become: no
+      file:
+        path: "{{ results_dir_abs }}/{{ phase }}"
+        state: directory
+        mode: '0755'
+
     - name: Save results locally
       delegate_to: localhost
       become: no
       copy:
         content: "{{ item.content }}"
-        dest: "{{ results_dir }}/{{ phase }}/{{ item.name }}"
+        dest: "{{ results_dir_abs }}/{{ phase }}/{{ item.name }}"
         mode: '0644'
       loop:
         - { name: context.txt, content: "{{ b_context.stdout }}\n" }

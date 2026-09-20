@@ -1,0 +1,145 @@
+
+PLAY [Verify AMD low-latency tuning] *******************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Active tuned profile] ****************************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [tuned profile verification] **********************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Kernel command line] *****************************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Check expected kernel arguments are present] *****************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [irqbalance configuration] ************************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Sysctl values] ***********************************************************
+ok: [i-0598402c957b4a6ff] => (item=vm.nr_hugepages)
+ok: [i-0598402c957b4a6ff] => (item=kernel.numa_balancing)
+ok: [i-0598402c957b4a6ff] => (item=kernel.timer_migration)
+ok: [i-0598402c957b4a6ff] => (item=kernel.sched_autogroup_enabled)
+ok: [i-0598402c957b4a6ff] => (item=vm.stat_interval)
+ok: [i-0598402c957b4a6ff] => (item=vm.swappiness)
+ok: [i-0598402c957b4a6ff] => (item=vm.min_free_kbytes)
+
+TASK [Workqueue cpumask] *******************************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Threads present on isolated cores (guide 5.2)] ***************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Run sysjitter on isolated cores (guide 3.7 / 5.1)] ***********************
+skipping: [i-0598402c957b4a6ff]
+
+TASK [Report] ******************************************************************
+ok: [i-0598402c957b4a6ff] => {
+    "msg": [
+        "tuned: Current active profile: amd-cpu-partitioning",
+        "tuned verify: See TuneD log file ('/var/log/tuned/tuned.log') for details.",
+        "cmdline: BOOT_IMAGE=(hd0,gpt3)/vmlinuz-5.14.0-687.15.1.el9_8.x86_64 console=ttyS0,115200n8 no_timer_check crashkernel=1G-4G:192M,4G-64G:256M,64G-:512M net.ifnames=0 nvme_core.io_timeout=4294967295 nvme_core.max_retries=10 root=UUID=e5763f63-291d-400f-9e7f-2ddfd421e439",
+        "missing expected kernel args: ['nohz_full=', 'rcu_nocbs=', 'rcu_nocb_poll', 'processor.max_cstate=0', 'amd_pstate=passive', 'transparent_hugepage=never', 'pcie_aspm=off']",
+        "irqbalance: ['IRQBALANCE_ARGS=\"--oneshot\"', 'IRQBALANCE_BANNED_CPULIST=8-15']",
+        "sysctl: ['vm.nr_hugepages=5000', 'kernel.numa_balancing=0', 'kernel.timer_migration=1', 'kernel.sched_autogroup_enabled=0', 'vm.stat_interval=300', 'vm.swappiness=0', 'vm.min_free_kbytes=1024000']",
+        "workqueue cpumask: ffffffff,ffffffff,ffffffff,ffffffff,ffffffff,ffff00ff",
+        "threads on isolated cores (8-15): 84",
+        [
+            "  8    1316       2 TS   19   0      - I    worker_thread  kworker/8:1-events",
+            "  8    1323       2 FF   90   -     50 S    irq_wait_for_i irq/35-AMD-Vi2-",
+            "  8    2080       2 TS   39 -20      - I<   worker_thread  kworker/8:1H-kblockd",
+            "  8    2488       2 TS   19   0      - I    worker_thread  kworker/8:2-cgroup_destroy",
+            "  8    2500       2 TS   19   0      - I    worker_thread  kworker/8:3",
+            "  8      67       2 TS   19   0      - S    smpboot_thread cpuhp/8",
+            "  8      68       2 FF   90   -     50 S    smpboot_thread idle_inject/8",
+            "  8      69       2 FF  139   -     99 S    smpboot_thread migration/8",
+            "  8      70       2 TS   19   0      - S    smpboot_thread ksoftirqd/8",
+            "  8      71       2 TS   19   0      - I    worker_thread  kworker/8:0-mm_percpu_wq",
+            "  8      72       2 TS   39 -20      - I<   worker_thread  kworker/8:0H-events_highpri",
+            "  9    1324       2 FF   90   -     50 S    irq_wait_for_i irq/36-AMD-Vi2-",
+            "  9    1687       2 TS   19   0      - I    worker_thread  kworker/9:1-mm_percpu_wq",
+            "  9    2119       2 TS   39 -20      - I<   worker_thread  kworker/9:1H-kblockd",
+            "  9      73       2 TS   19   0      - S    smpboot_thread cpuhp/9",
+            "  9      74       2 FF   90   -     50 S    smpboot_thread idle_inject/9",
+            "  9      75       2 FF  139   -     99 S    smpboot_thread migration/9",
+            "  9      76       2 TS   19   0      - S    smpboot_thread ksoftirqd/9",
+            "  9      77       2 TS   19   0      - I    worker_thread  kworker/9:0-rcu_gp",
+            "  9      78       2 TS   39 -20      - I<   worker_thread  kworker/9:0H-events_highpri",
+            " 10    1325       2 FF   90   -     50 S    irq_wait_for_i irq/37-AMD-Vi2-",
+            " 10    1742       2 TS   19   0      - I    worker_thread  kworker/10:1-events",
+            " 10    2121       2 TS   39 -20      - I<   worker_thread  kworker/10:1H-kblockd",
+            " 10      79       2 TS   19   0      - S    smpboot_thread cpuhp/10",
+            " 10      80       2 FF   90   -     50 S    smpboot_thread idle_inject/10",
+            " 10      81       2 FF  139   -     99 S    smpboot_thread migration/10",
+            " 10      82       2 TS   19   0      - S    smpboot_thread ksoftirqd/10",
+            " 10      83       2 TS   19   0      - I    worker_thread  kworker/10:0-rcu_gp",
+            " 10      84       2 TS   39 -20      - I<   worker_thread  kworker/10:0H-events_highpri",
+            " 11    1326       2 FF   90   -     50 S    irq_wait_for_i irq/38-AMD-Vi3-",
+            " 11    1479       2 TS   19   0      - I    worker_thread  kworker/11:1-mm_percpu_wq",
+            " 11    2122       2 TS   39 -20      - I<   worker_thread  kworker/11:1H-kblockd",
+            " 11    2726       2 TS   39 -20      - I<   rescuer_thread kworker/R-ipmi-msghandler-remove-wq",
+            " 11    2837       2 TS   39 -20      - I<   rescuer_thread kworker/R-xfs-buf/nvme0n1p3",
+            " 11    2839       2 TS   39 -20      - I<   rescuer_thread kworker/R-xfs-conv/nvme0n1p3",
+            " 11    2840       2 TS   39 -20      - I<   rescuer_thread kworker/R-xfs-reclaim/nvme0n1p3",
+            " 11    2841       2 TS   39 -20      - I<   rescuer_thread kworker/R-xfs-blockgc/nvme0n1p3",
+            " 11    2842       2 TS   39 -20      - I<   rescuer_thread kworker/R-xfs-inodegc/nvme0n1p3",
+            " 11    2849       2 TS   39 -20      - I<   rescuer_thread kworker/R-xfs-log/nvme0n1p3",
+            " 11    2850       2 TS   39 -20      - I<   rescuer_thread kworker/R-xfs-cil/nvme0n1p3",
+            " 11      85       2 TS   19   0      - S    smpboot_thread cpuhp/11",
+            " 11      86       2 FF   90   -     50 S    smpboot_thread idle_inject/11",
+            " 11      87       2 FF  139   -     99 S    smpboot_thread migration/11",
+            " 11      88       2 TS   19   0      - S    smpboot_thread ksoftirqd/11",
+            " 11      89       2 TS   19   0      - I    worker_thread  kworker/11:0-events",
+            " 11      90       2 TS   39 -20      - I<   worker_thread  kworker/11:0H-events_highpri",
+            " 12    1327       2 FF   90   -     50 S    irq_wait_for_i irq/39-AMD-Vi3-",
+            " 12    1510       2 TS   19   0      - I    worker_thread  kworker/12:1-events",
+            " 12    2216       2 TS   39 -20      - I<   worker_thread  kworker/12:1H-kblockd",
+            " 12    2551       2 TS   19   0      - I    worker_thread  kworker/12:2-mm_percpu_wq",
+            " 12      91       2 TS   19   0      - S    smpboot_thread cpuhp/12",
+            " 12      92       2 FF   90   -     50 S    smpboot_thread idle_inject/12",
+            " 12      93       2 FF  139   -     99 S    smpboot_thread migration/12",
+            " 12      94       2 TS   19   0      - S    smpboot_thread ksoftirqd/12",
+            " 12      95       2 TS   19   0      - I    worker_thread  kworker/12:0-cgroup_destroy",
+            " 12      96       2 TS   39 -20      - I<   worker_thread  kworker/12:0H-events_highpri",
+            " 13     100       2 TS   19   0      - S    smpboot_thread ksoftirqd/13",
+            " 13     101       2 TS   19   0      - I    worker_thread  kworker/13:0-mm_percpu_wq",
+            " 13     102       2 TS   39 -20      - I<   worker_thread  kworker/13:0H-events_highpri",
+            " 13    1328       2 FF   90   -     50 S    irq_wait_for_i irq/40-AMD-Vi3-",
+            " 13    1756       2 TS   19   0      - I    worker_thread  kworker/13:1-mm_percpu_wq",
+            " 13    2262       2 TS   39 -20      - I<   worker_thread  kworker/13:1H-kblockd",
+            " 13      97       2 TS   19   0      - S    smpboot_thread cpuhp/13",
+            " 13      98       2 FF   90   -     50 S    smpboot_thread idle_inject/13",
+            " 13      99       2 FF  139   -     99 S    smpboot_thread migration/13",
+            " 14     103       2 TS   19   0      - S    smpboot_thread cpuhp/14",
+            " 14     104       2 FF   90   -     50 S    smpboot_thread idle_inject/14",
+            " 14     105       2 FF  139   -     99 S    smpboot_thread migration/14",
+            " 14     106       2 TS   19   0      - S    smpboot_thread ksoftirqd/14",
+            " 14     107       2 TS   19   0      - I    worker_thread  kworker/14:0-cgroup_destroy",
+            " 14     108       2 TS   39 -20      - I<   worker_thread  kworker/14:0H-events_highpri",
+            " 14    1295       2 TS   19   0      - I    worker_thread  kworker/14:1-cgroup_destroy",
+            " 14    1315       2 TS   39 -20      - I<   worker_thread  kworker/14:1H-kblockd",
+            " 14    1894       2 TS   19   0      - I    worker_thread  kworker/14:2-cgroup_destroy",
+            " 14    2045       2 TS   19   0      - I    worker_thread  kworker/14:3-events_power_efficient",
+            " 15     109       2 TS   19   0      - S    smpboot_thread cpuhp/15",
+            " 15     110       2 FF   90   -     50 S    smpboot_thread idle_inject/15",
+            " 15     111       2 FF  139   -     99 S    smpboot_thread migration/15",
+            " 15     112       2 TS   19   0      - S    smpboot_thread ksoftirqd/15",
+            " 15     113       2 TS   19   0      - I    worker_thread  kworker/15:0-mm_percpu_wq",
+            " 15     114       2 TS   39 -20      - I<   worker_thread  kworker/15:0H-events_highpri",
+            " 15    1757       2 TS   19   0      - I    worker_thread  kworker/15:1-mm_percpu_wq",
+            " 15    2081       2 TS   39 -20      - I<   worker_thread  kworker/15:1H-kblockd",
+            " 15       3       2 TS   19   0      - S    kthread_worker pool_workqueue_"
+        ]
+    ]
+}
+
+TASK [sysjitter results] *******************************************************
+skipping: [i-0598402c957b4a6ff]
+
+PLAY RECAP *********************************************************************
+i-0598402c957b4a6ff        : ok=10   changed=0    unreachable=0    failed=0    skipped=2    rescued=0    ignored=0   
+

@@ -1,0 +1,97 @@
+
+PLAY [Verify AMD low-latency tuning] *******************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Active tuned profile] ****************************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [tuned profile verification] **********************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Kernel command line] *****************************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Check expected kernel arguments are present] *****************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [irqbalance configuration] ************************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Sysctl values] ***********************************************************
+ok: [i-0598402c957b4a6ff] => (item=vm.nr_hugepages)
+ok: [i-0598402c957b4a6ff] => (item=kernel.numa_balancing)
+ok: [i-0598402c957b4a6ff] => (item=kernel.timer_migration)
+ok: [i-0598402c957b4a6ff] => (item=kernel.sched_autogroup_enabled)
+ok: [i-0598402c957b4a6ff] => (item=vm.stat_interval)
+ok: [i-0598402c957b4a6ff] => (item=vm.swappiness)
+ok: [i-0598402c957b4a6ff] => (item=vm.min_free_kbytes)
+
+TASK [Workqueue cpumask] *******************************************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Threads present on isolated cores (guide 5.2)] ***************************
+ok: [i-0598402c957b4a6ff]
+
+TASK [Run sysjitter on isolated cores (guide 3.7 / 5.1)] ***********************
+skipping: [i-0598402c957b4a6ff]
+
+TASK [Report] ******************************************************************
+ok: [i-0598402c957b4a6ff] => {
+    "msg": [
+        "tuned: Current active profile: amd-cpu-partitioning",
+        "tuned verify: See TuneD log file ('/var/log/tuned/tuned.log') for details.",
+        "cmdline: BOOT_IMAGE=(hd0,gpt3)/vmlinuz-5.14.0-687.15.1.el9_8.x86_64 console=ttyS0,115200n8 no_timer_check crashkernel=1G-4G:192M,4G-64G:256M,64G-:512M net.ifnames=0 nvme_core.io_timeout=4294967295 nvme_core.max_retries=10 root=UUID=e5763f63-291d-400f-9e7f-2ddfd421e439 skew_tick=1 tsc=reliable rcupdate.rcu_normal_after_boot=1 rcutree.nohz_full_patience_delay=1000 nohz=on isolcpus=nohz,managed_irq,domain,8-15 nohz_full=8-15 rcu_nocbs=8-15 rcu_nocb_poll tuned.non_isolcpus=ffffffff,ffffffff,ffffffff,ffffffff,ffffffff,ffff00ff processor.max_cstate=0 amd_pstate=passive mce=ignore_ce nowatchdog nosoftlockup nmi_watchdog=0 transparent_hugepage=never pcie_aspm=off audit=0 amd_iommu=off iommu=off iomem=relaxed nomodeset nosmt",
+        "missing expected kernel args: none",
+        "irqbalance: ['IRQBALANCE_ARGS=\"--oneshot\"', 'IRQBALANCE_BANNED_CPULIST=8-15']",
+        "sysctl: ['vm.nr_hugepages=5000', 'kernel.numa_balancing=0', 'kernel.timer_migration=1', 'kernel.sched_autogroup_enabled=0', 'vm.stat_interval=300', 'vm.swappiness=0', 'vm.min_free_kbytes=1024000']",
+        "workqueue cpumask: 00000000,00000000,00000000,ffffffff,ffffffff,ffff00ff",
+        "threads on isolated cores (8-15): 36",
+        [
+            "  8    1502       2 TS   19   0      - I    worker_thread  kworker/8:1",
+            "  8      76       2 TS   19   0      - S    smpboot_thread cpuhp/8",
+            "  8      77       2 FF   90   -     50 S    smpboot_thread idle_inject/8",
+            "  8      78       2 FF  139   -     99 S    smpboot_thread migration/8",
+            "  8      79       2 TS   19   0      - S    smpboot_thread ksoftirqd/8",
+            "  8      80       2 TS   19   0      - I    worker_thread  kworker/8:0-events",
+            "  9      83       2 TS   19   0      - S    smpboot_thread cpuhp/9",
+            "  9      84       2 FF   90   -     50 S    smpboot_thread idle_inject/9",
+            "  9      85       2 FF  139   -     99 S    smpboot_thread migration/9",
+            "  9      86       2 TS   19   0      - S    smpboot_thread ksoftirqd/9",
+            " 10      90       2 TS   19   0      - S    smpboot_thread cpuhp/10",
+            " 10      91       2 FF   90   -     50 S    smpboot_thread idle_inject/10",
+            " 10      92       2 FF  139   -     99 S    smpboot_thread migration/10",
+            " 10      93       2 TS   19   0      - S    smpboot_thread ksoftirqd/10",
+            " 11     100       2 TS   19   0      - S    smpboot_thread ksoftirqd/11",
+            " 11      97       2 TS   19   0      - S    smpboot_thread cpuhp/11",
+            " 11      98       2 FF   90   -     50 S    smpboot_thread idle_inject/11",
+            " 11      99       2 FF  139   -     99 S    smpboot_thread migration/11",
+            " 12     104       2 TS   19   0      - S    smpboot_thread cpuhp/12",
+            " 12     105       2 FF   90   -     50 S    smpboot_thread idle_inject/12",
+            " 12     106       2 FF  139   -     99 S    smpboot_thread migration/12",
+            " 12     107       2 TS   19   0      - S    smpboot_thread ksoftirqd/12",
+            " 12     108       2 TS   19   0      - I    worker_thread  kworker/12:0-events",
+            " 12    1513       2 TS   19   0      - I    worker_thread  kworker/12:1",
+            " 13     111       2 TS   19   0      - S    smpboot_thread cpuhp/13",
+            " 13     112       2 FF   90   -     50 S    smpboot_thread idle_inject/13",
+            " 13     113       2 FF  139   -     99 S    smpboot_thread migration/13",
+            " 13     114       2 TS   19   0      - S    smpboot_thread ksoftirqd/13",
+            " 14     118       2 TS   19   0      - S    smpboot_thread cpuhp/14",
+            " 14     119       2 FF   90   -     50 S    smpboot_thread idle_inject/14",
+            " 14     120       2 FF  139   -     99 S    smpboot_thread migration/14",
+            " 14     121       2 TS   19   0      - S    smpboot_thread ksoftirqd/14",
+            " 15     126       2 TS   19   0      - S    smpboot_thread cpuhp/15",
+            " 15     127       2 FF   90   -     50 S    smpboot_thread idle_inject/15",
+            " 15     128       2 FF  139   -     99 S    smpboot_thread migration/15",
+            " 15     129       2 TS   19   0      - S    smpboot_thread ksoftirqd/15"
+        ]
+    ]
+}
+
+TASK [sysjitter results] *******************************************************
+skipping: [i-0598402c957b4a6ff]
+
+PLAY RECAP *********************************************************************
+i-0598402c957b4a6ff        : ok=10   changed=0    unreachable=0    failed=0    skipped=2    rescued=0    ignored=0   
+
