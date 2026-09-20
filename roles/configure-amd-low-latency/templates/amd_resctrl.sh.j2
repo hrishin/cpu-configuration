@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Configure L3 Cache Allocation Technology groups via resctrl (guide section 2.6).
+set -uo pipefail
+
+RESCTRL="{{ amd_resctrl_mount }}"
+
+if ! mountpoint -q "${RESCTRL}"; then
+  mount -t resctrl resctrl "${RESCTRL}" || { echo "failed to mount resctrl at ${RESCTRL}" >&2; exit 1; }
+fi
+
+rc=0
+{% for g in amd_resctrl_groups %}
+mkdir -p "${RESCTRL}/{{ g.name }}"
+echo "{{ g.schemata }}" > "${RESCTRL}/{{ g.name }}/schemata" || { echo "{{ g.name }}: failed to write schemata" >&2; rc=1; }
+echo "{{ g.cpus }}" > "${RESCTRL}/{{ g.name }}/cpus_list" || { echo "{{ g.name }}: failed to write cpus_list" >&2; rc=1; }
+echo "{{ g.name }}: $(grep '^ *L3' "${RESCTRL}/{{ g.name }}/schemata" | tr -d ' ') cpus={{ g.cpus }}"
+{% endfor %}
+exit "${rc}"

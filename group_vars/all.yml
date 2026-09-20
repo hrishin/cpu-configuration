@@ -2,19 +2,68 @@
 # Role enable/disable flags
 # Set to true to apply the role, false to skip it
 
-# Install dependencies role - installs libbpf-tools, bpftrace, trace-cmd, sysjitter
+# Install dependencies role - installs libbpf-tools, bpftrace, trace-cmd, perf, kernel-tools, hwloc, sysjitter
 install_dependencies_enabled: true
 
 # Set to true to ignore package installation errors (packages will be skipped if unavailable)
 ignore_package_errors: false
 
-# Configure housekeeping role - configures kernel boot args, sysctl, scripts, service
+# ---------------------------------------------------------------------------
+# AMD EPYC 9005 low-latency tuning (AMD pub 73314 "Low Latency Tuning for
+# AMD EPYC 9005 CPU Powered Servers"). Delivered as a tuned profile
+# (amd-cpu-partitioning) which owns the kernel command line, sysctls,
+# workqueue/irqbalance masks and systemd CPU affinity. Reboot required after
+# first activation. See roles/configure-amd-low-latency/defaults/main.yml for
+# every knob.
+# ---------------------------------------------------------------------------
+configure_amd_low_latency_enabled: true
+
+# CPU layout - single source of truth for isolation.
+# isolated_cores: CPUs handed to latency-sensitive threads (nohz_full, rcu_nocbs, isolcpus).
+# hk_cpus: everything else; used by the legacy pin scripts and irqaffinity= fallback.
+# Keep the isolated set inside one CCD/NUMA node local to the NIC (guide 2.2, 2.6).
+isolated_cores: "2-11,14-23"
+no_balance_cores: "{{ isolated_cores }}"
+hk_cpus: "0,1,12,13"
+
+amd_tuned_profile_enabled: true
+amd_irqbalance_oneshot: true
+amd_reboot_after_apply: false
+
+# Security trade-offs the guide leaves to you (adds mitigations=off / selinux=0).
+amd_tuned_cmdline_disable_mitigations: false
+amd_tuned_cmdline_disable_selinux: false
+
+# Kernel network buffer sysctls (guide 3.5) - off unless your workload needs them.
+amd_tuned_network_sysctl_enabled: false
+
+# Solarflare X4 (guide 3.4 / ch.4): steer RSS IRQs from the tuned script agent.
+amd_solarflare_affinity_enabled: false
+amd_solarflare_affinity_cores: ""
+amd_solarflare_rss_cpus: ""
+
+# Per-core frequency limits via cpupower (guide 2.4). Example:
+# amd_cpufreq_profiles:
+#   - { cpus: "{{ hk_cpus }}", min: "2.4GHz", max: "3.3GHz" }
+amd_cpufreq_profiles: []
+
+# L3 cache allocation via resctrl (guide 2.6). Example:
+# amd_resctrl_groups:
+#   - { name: ccd0_cos0, schemata: "L3:0=00ff", cpus: "0-1" }
+#   - { name: ccd0_cos1, schemata: "L3:0=ff00", cpus: "2-7" }
+amd_resctrl_groups: []
+
+# ---------------------------------------------------------------------------
+# Legacy housekeeping role (pre-tuned approach).
+# The tuned profile now owns kernel boot args and sysctls, so those two parts
+# default to off to avoid duplicate/conflicting cmdline entries. Enable them
+# only if you disable amd_tuned_profile_enabled and want the grubby path.
+# The pin scripts and service remain useful for manual IRQ steering.
+# ---------------------------------------------------------------------------
 configure_housekeeping_enabled: true
 
-# Individual component flags for configure-housekeeping role
-# Set to true/false to control specific parts of the housekeeping configuration
-configure_housekeeping_kernel_boot_args: true
-configure_housekeeping_sysctl: true
+configure_housekeeping_kernel_boot_args: false
+configure_housekeeping_sysctl: false
 configure_housekeeping_scripts: true
 configure_housekeeping_service: true
 
@@ -24,25 +73,28 @@ set_irq_affinity_script_path: /usr/local/sbin/set_irq_affinity.sh
 trace_jitter_script_path: /usr/local/bin/trace_jitter.sh
 systemd_service_path: /etc/systemd/system/pin-housekeeping.service
 
-# Default boot parameters
-default_boot_params: "crashkernel=auto rashkernel=auto biosdevname=1 net.ifnames=0 quiet LANG=en_US.UTF-8 transparent_hugepage=never elevator=deadline nosoftlockup mce=ignore_ce ipv6.disable=1 printk.time audit=1 isolcpus=domain,nohz,managed_irq,2-11,14-23 nohz_full=2-11,14-23 rcu_nocbs=2-11,14-23 irqaffinity=0,1,12,13 mitigations=off maxcpus=24 nosmt tsc=reliable nmi_watchdog=0 watchdog=0 intel_idle.max_cstate=1 processor.max_cstate=1 skew_tick=1 intel_pstate=passive idle=halt"
+# Fallback boot parameters for the grubby path (AMD guide 3.3 equivalents; mirrors
+# what tuned generates minus tuned.non_isolcpus). Only used when
+# configure_housekeeping_kernel_boot_args is true.
+default_boot_params: "nohz=on isolcpus=nohz,managed_irq,domain,{{ no_balance_cores }} nohz_full={{ isolated_cores }} rcu_nocbs={{ isolated_cores }} rcu_nocb_poll irqaffinity={{ hk_cpus }} skew_tick=1 tsc=reliable rcupdate.rcu_normal_after_boot=1 rcutree.nohz_full_patience_delay=1000 processor.max_cstate=0 amd_pstate=passive mce=ignore_ce nowatchdog nosoftlockup nmi_watchdog=0 transparent_hugepage=never pcie_aspm=off audit=0 amd_iommu=off iommu=off iomem=relaxed nomodeset"
 
 # Optional: Override boot args if needed (otherwise captured from target, or uses default_boot_params)
 kernel_boot_args: ""
 
-# Default sysctl settings
+# Fallback sysctl settings for the sysctl.d path (same values as the tuned profile).
 default_sysctl_settings:
+  vm.nr_hugepages: 5000
+  kernel.hung_task_timeout_secs: 600
   kernel.numa_balancing: 0
-  kernel.sched_rt_runtime_us: -1
-  kernel.timer_migration: 0
-  kernel.soft_watchdog: 0
-  vm.stat_interval: 60
+  kernel.timer_migration: 1
+  kernel.sched_autogroup_enabled: 0
+  vm.stat_interval: 300
+  vm.swappiness: 0
+  vm.zone_reclaim_mode: 0
+  vm.min_free_kbytes: 1024000
 
 # Optional: Override sysctl settings if needed (otherwise uses default_sysctl_settings)
 sysctl_settings: {}
-
-# Housekeeping CPUs configuration
-hk_cpus: "0,1,12,13"
 
 # Isolated CPUs range for trace_jitter.sh (default: 2-7, can be overridden)
 isolated_cpu_start: 2

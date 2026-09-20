@@ -1,0 +1,57 @@
+---
+# Section 2.6: L3 Cache Allocation Technology via resctrl (PQOS/CAT).
+
+- name: Deploy amd_resctrl.sh
+  template:
+    src: amd_resctrl.sh.j2
+    dest: "{{ amd_resctrl_script_path }}"
+    mode: '0755'
+    owner: root
+    group: root
+  when: amd_resctrl_groups | length > 0
+
+- name: Deploy amd-resctrl.service
+  template:
+    src: amd-resctrl.service.j2
+    dest: "{{ amd_resctrl_service_path }}"
+    mode: '0644'
+    owner: root
+    group: root
+  notify: reload systemd
+  when: amd_resctrl_groups | length > 0
+
+- name: Flush handlers so the unit is visible
+  meta: flush_handlers
+
+- name: Enable and start amd-resctrl.service
+  systemd:
+    name: amd-resctrl
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  when: amd_resctrl_groups | length > 0
+
+- name: Check for a stale amd-resctrl.service
+  stat:
+    path: "{{ amd_resctrl_service_path }}"
+  register: amd_resctrl_service_stat
+  when: amd_resctrl_groups | length == 0
+
+- name: Disable amd-resctrl.service when no groups are configured
+  systemd:
+    name: amd-resctrl
+    enabled: no
+    state: stopped
+  when:
+    - amd_resctrl_groups | length == 0
+    - amd_resctrl_service_stat.stat.exists
+
+- name: Remove amd-resctrl files when no groups are configured
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ amd_resctrl_service_path }}"
+    - "{{ amd_resctrl_script_path }}"
+  notify: reload systemd
+  when: amd_resctrl_groups | length == 0
