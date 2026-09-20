@@ -34,6 +34,6 @@
   when:
     - amd_reboot_after_apply | bool
     - amd_tuned_profile_enabled | bool
-    - amd_tuned_profile_applied is defined
-    - amd_tuned_profile_applied is changed
+    - (amd_tuned_profile_applied is defined and amd_tuned_profile_applied is changed)
+      or (amd_tuned_bls_patch is defined and amd_tuned_bls_patch is changed)
     - ansible_connection | default('ssh') != 'local'

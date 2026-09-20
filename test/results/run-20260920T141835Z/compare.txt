@@ -1,0 +1,72 @@
+baseline: /Users/hrishis/code/cpu-configuration/test/results/run-20260920T141835Z/baseline/sysjitter.txt  (runtime 300.345 s, threshold 300 ns)
+tuned:    /Users/hrishis/code/cpu-configuration/test/results/run-20260920T141835Z/tuned/sysjitter.txt  (runtime 300.345 s, threshold 300 ns)
+
+metric        core      baseline         tuned    change
+--------------------------------------------------------
+interrupts       8        301345           662     -100%
+interrupts       9        301679           853     -100%
+interrupts      10        301963          1180     -100%
+interrupts      11        302412          1352     -100%
+interrupts      12        303006          1615      -99%
+interrupts      13        302969          1748      -99%
+interrupts      14        303607          1864      -99%
+interrupts      15        303230          1779      -99%
+
+int/s            8      1003.329         2.204     -100%
+int/s            9      1004.441         2.840     -100%
+int/s           10      1005.386         3.929     -100%
+int/s           11      1006.881         4.501     -100%
+int/s           12      1008.859         5.377      -99%
+int/s           13      1008.736         5.820      -99%
+int/s           14      1010.860         6.206      -99%
+int/s           15      1009.605         5.923      -99%
+
+mean ns          8          3095           321      -90%
+mean ns          9          2614           329      -87%
+mean ns         10          2647           337      -87%
+mean ns         11          2592           410      -84%
+mean ns         12          2596           350      -87%
+mean ns         13          2587           372      -86%
+mean ns         14          2671           363      -86%
+mean ns         15          2609           356      -86%
+
+p99 ns           8          7788           370      -95%
+p99 ns           9          7628           360      -95%
+p99 ns          10          7829           400      -95%
+p99 ns          11          7538           390      -95%
+p99 ns          12          7598           430      -94%
+p99 ns          13          7558           410      -95%
+p99 ns          14          8860           440      -95%
+p99 ns          15          7879           440      -94%
+
+p99.99 ns        8         29484           380      -99%
+p99.99 ns        9         21094          8820      -58%
+p99.99 ns       10         32147           410      -99%
+p99.99 ns       11         21384         47454     +122%
+p99.99 ns       12         23857           450      -98%
+p99.99 ns       13         23076         20623      -11%
+p99.99 ns       14         31135           450      -99%
+p99.99 ns       15         21374           460      -98%
+
+max ns           8        240077           380     -100%
+max ns           9        296231          8820      -97%
+max ns          10        213306           410     -100%
+max ns          11        224989         47454      -79%
+max ns          12        363489           450     -100%
+max ns          13        178586         20623      -88%
+max ns          14        354799           450     -100%
+max ns          15        311088           460     -100%
+
+total %          8         0.311         0.000     -100%
+total %          9         0.263         0.000     -100%
+total %         10         0.266         0.000     -100%
+total %         11         0.261         0.000     -100%
+total %         12         0.262         0.000     -100%
+total %         13         0.261         0.000     -100%
+total %         14         0.270         0.000     -100%
+total %         15         0.263         0.000     -100%
+
+summary over cores 8,9,10,11,12,13,14,15
+  total interrupts : 2420211 -> 11053
+  worst max ns     : 363489 -> 47454
+  worst p99.99 ns  : 32147 -> 47454

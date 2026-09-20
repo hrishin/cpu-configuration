@@ -1,0 +1,89 @@
+---
+# Run sysjitter on the isolated cores and fetch the results.
+# Usage (from the repo root):
+#   ansible-playbook -i test/inventory/hosts.ini test/benchmark.yml \
+#     -e phase=baseline -e sysjitter_runtime=300 -e results_dir=test/results/2026-09-20
+- name: Benchmark jitter on isolated cores
+  hosts: all
+  become: yes
+  gather_facts: yes
+  vars:
+    phase: baseline                 # label for the result files
+    sysjitter_runtime: 300          # seconds
+    sysjitter_threshold_ns: 300
+    sysjitter_cores: "{{ isolated_cores }}"
+    sysjitter_bin: /usr/local/bin/sysjitter
+    results_dir: "test/results/latest"
+    # delegate_to: localhost runs modules from Ansible's temp dir, so resolve relative
+    # paths against the controller's cwd (the repo root) before using them.
+    results_dir_abs: "{{ results_dir | realpath }}"
+    remote_out: "/tmp/sysjitter-{{ phase }}.txt"
+  tasks:
+    - name: Ensure sysjitter is installed
+      stat:
+        path: "{{ sysjitter_bin }}"
+      register: b_sysjitter
+
+    - name: Fail if sysjitter is missing
+      fail:
+        msg: "{{ sysjitter_bin }} not found; run configure-housekeeping.yml with install_dependencies_enabled=true first"
+      when: not b_sysjitter.stat.exists
+
+    - name: Capture context (cmdline, tuned, topology, kernel)
+      shell: |
+        echo "## phase: {{ phase }}  host: {{ inventory_hostname }}  date: $(date -u +%FT%TZ)"
+        echo "## kernel: $(uname -r)"
+        echo "## cmdline:"; cat /proc/cmdline
+        echo "## tuned:"; tuned-adm active 2>&1 || true
+        echo "## irqbalance:"; grep -E '^IRQBALANCE' /etc/sysconfig/irqbalance 2>/dev/null || echo "(defaults)"
+        echo "## cpu:"; lscpu | grep -E 'Model name|Thread|Core|Socket|NUMA|L3'
+        echo "## topology (isolated cores {{ sysjitter_cores }}):"
+        lscpu -e=CPU,CORE,SOCKET,NODE,CACHE,ONLINE
+        echo "## threads on isolated cores:"
+        ps -eLo psr,pid,class,pri,rtprio,comm | awk -v cores="{{ sysjitter_cores }}" '
+          BEGIN { n = split(cores, p, ","); for (i = 1; i <= n; i++) { if (split(p[i], r, "-") == 2) { for (c = r[1]; c <= r[2]; c++) want[c] = 1 } else { want[p[i]] = 1 } } }
+          NR > 1 && ($1 in want) { print }' | sort -n
+      args:
+        executable: /bin/bash
+      register: b_context
+      changed_when: false
+
+    - name: Run sysjitter for {{ sysjitter_runtime }}s on cores {{ sysjitter_cores }} (threshold {{ sysjitter_threshold_ns }} ns)
+      shell: >
+        {{ sysjitter_bin }} --runtime {{ sysjitter_runtime }} --cores {{ sysjitter_cores }}
+        {{ sysjitter_threshold_ns }} > {{ remote_out }} 2>&1
+      args:
+        executable: /bin/bash
+      async: "{{ sysjitter_runtime | int + 300 }}"
+      poll: 30
+      changed_when: false
+
+    - name: Read sysjitter output
+      command: cat {{ remote_out }}
+      register: b_sysjitter_out
+      changed_when: false
+
+    - name: Create local results directory
+      delegate_to: localhost
+      become: no
+      file:
+        path: "{{ results_dir_abs }}/{{ phase }}"
+        state: directory
+        mode: '0755'
+
+    - name: Save results locally
+      delegate_to: localhost
+      become: no
+      copy:
+        content: "{{ item.content }}"
+        dest: "{{ results_dir_abs }}/{{ phase }}/{{ item.name }}"
+        mode: '0644'
+      loop:
+        - { name: context.txt, content: "{{ b_context.stdout }}\n" }
+        - { name: sysjitter.txt, content: "{{ b_sysjitter_out.stdout }}\n" }
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: sysjitter ({{ phase }})
+      debug:
+        msg: "{{ b_sysjitter_out.stdout_lines }}"

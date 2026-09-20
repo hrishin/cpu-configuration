@@ -219,6 +219,7 @@ Not automatable from the OS - set these in the platform BIOS before applying the
 - `mitigations=off` and `selinux=0` are off by default - the guide flags them as security decisions.
 - `vm.nr_hugepages=5000` (~10 GB of 2 MB pages) is the guide default for Onload; size it for your host via `amd_tuned_sysctl_overrides`.
 - irqbalance in oneshot mode restarts (one pass) whenever the sysconfig line changes; tuned's `[irqbalance]` plugin writes the banned-CPU mask to the same file.
+- **Cloud images:** Rocky/Alma/RHEL AMIs and GenericCloud images regenerate `/etc/machine-id` on first boot while their BLS entries keep the image-build prefix, so tuned's bootloader hook patches nothing and the kernel args silently never reach `/proc/cmdline`. The role re-runs `92-tuned.install` per actual entry prefix and fails loudly if `$tuned_params` is still missing; `verify-tuning.yml` reports missing args after reboot.
 - The tuned profile directory is auto-detected (`/etc/tuned/profiles` on tuned >= 2.23, otherwise `/etc/tuned`); override with `amd_tuned_profiles_dir`.
 - The legacy `configure-housekeeping` grubby path now carries the AMD argument set; do not enable it together with the tuned profile or you will get duplicate `isolcpus`/`nohz_full` entries.
 - All roles are idempotent; the profile is only re-activated when a profile file changes or it is not the active profile.
