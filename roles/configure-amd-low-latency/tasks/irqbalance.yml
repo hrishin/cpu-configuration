@@ -1,0 +1,24 @@
+---
+# Section 3.4: run irqbalance once at boot so it cleans up cores, then stop so
+# manual IRQ steering (sfcaffinity_config, set_irq_affinity.sh) is not undone.
+
+- name: Install irqbalance
+  package:
+    name: irqbalance
+    state: present
+
+- name: Set IRQBALANCE_ARGS="--oneshot"
+  lineinfile:
+    path: "{{ amd_irqbalance_sysconfig_path }}"
+    regexp: '^#?\s*IRQBALANCE_ARGS='
+    line: 'IRQBALANCE_ARGS="--oneshot"'
+    create: yes
+    mode: '0644'
+    owner: root
+    group: root
+  notify: restart irqbalance
+
+- name: Enable irqbalance (runs once per boot in oneshot mode)
+  systemd:
+    name: irqbalance
+    enabled: yes

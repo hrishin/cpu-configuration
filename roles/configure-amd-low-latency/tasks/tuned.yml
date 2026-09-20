@@ -1,0 +1,104 @@
+---
+# Chapter 3: AMD tuned CPU partitioning profile.
+
+- name: Install tuned and related packages
+  package:
+    name: "{{ amd_tuned_packages }}"
+    state: present
+
+- name: Check whether tuned uses the newer profiles/ layout (tuned >= 2.23)
+  stat:
+    path: /usr/lib/tuned/profiles
+  register: amd_tuned_new_layout
+
+- name: Resolve tuned custom profile directory
+  set_fact:
+    amd_tuned_profiles_dir_resolved: >-
+      {{ amd_tuned_profiles_dir if amd_tuned_profiles_dir | length > 0
+         else ('/etc/tuned/profiles' if amd_tuned_new_layout.stat.exists else '/etc/tuned') }}
+
+- name: Set profile path
+  set_fact:
+    amd_tuned_profile_path: "{{ amd_tuned_profiles_dir_resolved }}/{{ amd_tuned_profile_name }}"
+
+- name: Create profile directory
+  file:
+    path: "{{ amd_tuned_profile_path }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Deploy tuned.conf
+  template:
+    src: tuned.conf.j2
+    dest: "{{ amd_tuned_profile_path }}/tuned.conf"
+    mode: '0644'
+    owner: root
+    group: root
+  register: amd_tuned_conf
+
+- name: Deploy script.sh
+  template:
+    src: script.sh.j2
+    dest: "{{ amd_tuned_profile_path }}/script.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  register: amd_tuned_script
+
+- name: Deploy 00-tuned-pre-udev.sh
+  template:
+    src: 00-tuned-pre-udev.sh.j2
+    dest: "{{ amd_tuned_profile_path }}/00-tuned-pre-udev.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  register: amd_tuned_pre_udev
+
+- name: Deploy cpu-partitioning-variables.conf (isolated_cores / no_balance_cores)
+  template:
+    src: cpu-partitioning-variables.conf.j2
+    dest: "{{ amd_tuned_variables_conf_path }}"
+    mode: '0644'
+    owner: root
+    group: root
+  register: amd_tuned_variables
+
+- name: Enable and start tuned
+  systemd:
+    name: tuned
+    enabled: yes
+    state: started
+
+- name: Check the active tuned profile
+  command: tuned-adm active
+  register: amd_tuned_active
+  changed_when: false
+  failed_when: false
+
+- name: Activate the {{ amd_tuned_profile_name }} profile
+  command: tuned-adm profile {{ amd_tuned_profile_name }}
+  register: amd_tuned_profile_applied
+  changed_when: true
+  when: >
+    amd_tuned_profile_name not in (amd_tuned_active.stdout | default(''))
+    or amd_tuned_conf is changed
+    or amd_tuned_script is changed
+    or amd_tuned_pre_udev is changed
+    or amd_tuned_variables is changed
+
+- name: Read resulting tuned boot command line
+  command: cat /etc/tuned/bootcmdline
+  register: amd_tuned_bootcmdline
+  changed_when: false
+  failed_when: false
+
+- name: Show tuned status
+  debug:
+    msg:
+      - "Active profile: {{ amd_tuned_active.stdout | default('unknown') }}{{ ' (re-applied)' if amd_tuned_profile_applied is changed else '' }}"
+      - "Profile directory: {{ amd_tuned_profile_path }}"
+      - "isolated_cores={{ isolated_cores }} no_balance_cores={{ no_balance_cores }}"
+      - "tuned bootcmdline: {{ amd_tuned_bootcmdline.stdout | default('n/a') }}"
+      - "{{ 'A reboot is required for kernel command line changes to take effect.' if amd_tuned_profile_applied is changed else 'No profile change.' }}"

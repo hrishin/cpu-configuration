@@ -1,0 +1,108 @@
+---
+# Post-reboot validation of the AMD low-latency tuning (guide chapters 3.3, 3.7, 5).
+# Usage:
+#   ansible-playbook -i inventory.example verify-tuning.yml --limit remote
+#   ansible-playbook -i inventory.example verify-tuning.yml -e sysjitter_runtime=60 -e sysjitter_threshold_ns=300
+- name: Verify AMD low-latency tuning
+  hosts: all
+  become: yes
+  gather_facts: yes
+  vars:
+    sysjitter_runtime: 0          # seconds; 0 = skip the sysjitter run
+    sysjitter_threshold_ns: 300   # guide uses 300 ns (1 min) and 500 ns (1 h) examples
+    sysjitter_cores: "{{ isolated_cores }}"
+  tasks:
+    - name: Active tuned profile
+      command: tuned-adm active
+      register: v_tuned_active
+      changed_when: false
+      failed_when: false
+
+    - name: tuned profile verification
+      command: tuned-adm verify
+      register: v_tuned_verify
+      changed_when: false
+      failed_when: false
+
+    - name: Kernel command line
+      command: cat /proc/cmdline
+      register: v_cmdline
+      changed_when: false
+
+    - name: Check expected kernel arguments are present
+      set_fact:
+        v_missing_args: >-
+          {{ ['nohz_full=', 'rcu_nocbs=', 'rcu_nocb_poll', 'processor.max_cstate=0',
+              'amd_pstate=passive', 'transparent_hugepage=never', 'pcie_aspm=off']
+             | reject('in', v_cmdline.stdout) | list }}
+
+    - name: irqbalance configuration
+      command: grep -E '^(IRQBALANCE_ARGS|IRQBALANCE_ONESHOT|IRQBALANCE_BANNED_CPUS|IRQBALANCE_BANNED_CPULIST)' /etc/sysconfig/irqbalance
+      register: v_irqbalance
+      changed_when: false
+      failed_when: false
+
+    - name: Sysctl values
+      command: sysctl -n {{ item }}
+      loop:
+        - vm.nr_hugepages
+        - kernel.numa_balancing
+        - kernel.timer_migration
+        - kernel.sched_autogroup_enabled
+        - vm.stat_interval
+        - vm.swappiness
+        - vm.min_free_kbytes
+      register: v_sysctl
+      changed_when: false
+      failed_when: false
+
+    - name: Workqueue cpumask
+      command: cat /sys/devices/virtual/workqueue/cpumask
+      register: v_wq_mask
+      changed_when: false
+      failed_when: false
+
+    - name: Threads present on isolated cores (guide 5.2)
+      shell: |
+        set -o pipefail
+        ps -eLo psr,pid,ppid,class,pri,nice,rtprio,stat,wchan:14,comm | awk -v cores="{{ sysjitter_cores }}" '
+          BEGIN {
+            n = split(cores, parts, ",");
+            for (i = 1; i <= n; i++) {
+              if (split(parts[i], r, "-") == 2) { for (c = r[1]; c <= r[2]; c++) want[c] = 1 } else { want[parts[i]] = 1 }
+            }
+          }
+          NR > 1 && ($1 in want) { print }
+        ' | sort -n
+      args:
+        executable: /bin/bash
+      register: v_threads
+      changed_when: false
+      failed_when: false
+
+    - name: Run sysjitter on isolated cores (guide 3.7 / 5.1)
+      command: >
+        /usr/local/bin/sysjitter --runtime {{ sysjitter_runtime }}
+        --cores {{ sysjitter_cores }} {{ sysjitter_threshold_ns }}
+      register: v_sysjitter
+      changed_when: false
+      failed_when: false
+      when: sysjitter_runtime | int > 0
+
+    - name: Report
+      debug:
+        msg:
+          - "tuned: {{ v_tuned_active.stdout | default('n/a') }}"
+          - "tuned verify: {{ (v_tuned_verify.stdout_lines | default(['n/a'])) | last }}"
+          - "cmdline: {{ v_cmdline.stdout }}"
+          - "missing expected kernel args: {{ v_missing_args if v_missing_args | length > 0 else 'none' }}"
+          - "irqbalance: {{ v_irqbalance.stdout_lines | default([]) }}"
+          - "sysctl: {{ v_sysctl.results | map(attribute='item') | zip(v_sysctl.results | map(attribute='stdout')) | map('join', '=') | list }}"
+          - "workqueue cpumask: {{ v_wq_mask.stdout | default('n/a') }}"
+          - "threads on isolated cores ({{ sysjitter_cores }}): {{ v_threads.stdout_lines | default([]) | length }}"
+          - "{{ v_threads.stdout_lines | default([]) }}"
+
+    - name: sysjitter results
+      debug:
+        msg: "{{ v_sysjitter.stdout_lines }}"
+      when: sysjitter_runtime | int > 0 and v_sysjitter.stdout is defined

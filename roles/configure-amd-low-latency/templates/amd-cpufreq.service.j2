@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Apply AMD per-core CPU frequency limits (cpupower)
+After=tuned.service
+
+[Service]
+Type=oneshot
+ExecStart={{ amd_cpufreq_script_path }}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

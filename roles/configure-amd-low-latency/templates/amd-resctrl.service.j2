@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Configure AMD L3 cache allocation (resctrl / CAT)
+After=tuned.service
+
+[Service]
+Type=oneshot
+ExecStart={{ amd_resctrl_script_path }}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
