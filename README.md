@@ -119,6 +119,53 @@ Sysctls: `vm.nr_hugepages=5000`, `kernel.hung_task_timeout_secs=600`, `kernel.nu
 Also: workqueue and writeback cpumasks, `machinecheck*/ignore_ce=1`, systemd `CPUAffinity`,
 irqbalance banned CPUs, scheduler thread isolation, KSM disabled, dracut pre-udev hook.
 
+### Variable precedence
+
+Ansible merges variables from many places; the later source wins. The layers this repo
+uses, lowest to highest:
+
+| # | Source | Where in this repo | Use it for |
+|---|---|---|---|
+| 1 | Role defaults | `roles/*/defaults/main.yml` | the documented default for every knob; roles stay usable standalone |
+| 2 | Inventory `group_vars/all.yml` | (none) | |
+| 3 | Playbook `group_vars/all.yml` | `group_vars/all.yml` | site-wide choices: CPU layout, role switches |
+| 4 | Inventory `group_vars/<group>.yml` | `test/inventory/group_vars/bench.yml` | per-inventory overrides for a named group |
+| 5 | Playbook `group_vars/<group>.yml` | `group_vars/local.yml`, `group_vars/remote.yml` | per-environment differences (bootloader on/off) |
+| 6 | Inventory / playbook `host_vars/<host>.yml` | (none) | one-off host quirks |
+| 7 | Host facts | `ansible_facts[...]` | read-only, gathered by `gather_facts` |
+| 8 | Play `vars:` / `vars_files:` | `verify-tuning.yml`, `test/benchmark.yml` | playbook-local settings such as `sysjitter_runtime` |
+| 9 | Role `vars/main.yml`, block and task `vars:` | `amd_low_latency` oneshot parameters | internal, not meant to be overridden |
+| 10 | `set_fact` / `register` | `amd_low_latency_tuned_profile_path`, `housekeeping_missing_boot_args` | computed during the run |
+| 11 | `include_role` / `include_tasks` params | `oneshot_service.yml` `vars:` | per-call parameters |
+| 12 | Extra vars `-e` | command line | one-off overrides; always win |
+
+Consequences worth knowing:
+
+- Set your real configuration in `group_vars/`, not in the role defaults. Defaults exist so
+  `ansible-lint` and standalone use have a value; editing them is a code change.
+- The shared CPU layout (`isolated_cores`, `no_balance_cores`, `hk_cpus`) is mapped into
+  role-prefixed variables in `group_vars/all.yml`. Overriding `isolated_cores` with `-e`
+  works because the mapping is a Jinja reference that is resolved at use time; overriding
+  `amd_low_latency_isolated_cores` directly is also fine and only affects that role.
+- Both playbook-adjacent `group_vars/` (next to `site.yml`) and inventory-adjacent
+  `group_vars/` (next to `hosts.ini`) are loaded. A named group always beats `all`, which
+  is why `test/inventory/group_vars/bench.yml` overrides `group_vars/all.yml`; at the same
+  group level the playbook-adjacent file beats the inventory-adjacent one. Between sibling
+  groups the last one alphabetically wins, so avoid setting the same key in two groups a
+  host belongs to.
+- Role defaults that reference other variables (`amd_low_latency_no_balance_cores:
+  "{{ amd_low_latency_isolated_cores }}"`) follow whatever value the referenced variable
+  ends up with after precedence is applied, not the default next to it.
+- `-e` values are strings unless you pass JSON (`-e '{"amd_low_latency_cpufreq_profiles": [...]}'`
+  or `-e @file.json`). Flags used in `when: x | bool` tolerate `"true"`/`"false"` strings;
+  lists and dicts do not.
+- `include_tasks` `vars:` (the oneshot service parameters) sit above inventory and
+  `group_vars`, so they cannot be overridden from outside the role by design; the
+  values they pass through (`amd_low_latency_cpufreq_profiles`, ...) still come from
+  your `group_vars`.
+
+Full list: <https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html#understanding-variable-precedence>
+
 ### Optional tuning knobs
 
 ```yaml

@@ -1,6 +1,6 @@
 ---
 # Overrides for the AWS c7a.metal-48xl benchmark host (2 x EPYC 9R14, 96 cores / 192 threads).
-# Inventory group_vars beat the playbook's group_vars/all.yml.
+# A named group's vars beat group_vars/all.yml (see README, Variable precedence).
 
 # AWS numbers SMT siblings as (i, i+96). The guide's BIOS table disables SMT; on
 # EC2 metal there is no BIOS access, so nosmt on the kernel cmdline is the
