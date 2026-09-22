@@ -51,9 +51,9 @@ run_phase() {
   case "${phase}" in
     install)
       log "Phase 1/6: install tooling (no tuning)"
-      ansible-playbook -i "${INVENTORY}" configure-housekeeping.yml \
-        -e configure_amd_low_latency_enabled=false \
-        -e configure_housekeeping_enabled=false
+      ansible-playbook -i "${INVENTORY}" site.yml \
+        -e amd_low_latency_enabled=false \
+        -e housekeeping_enabled=false
       ;;
     baseline)
       log "Phase 2/6: baseline sysjitter (${SYSJITTER_RUNTIME}s @ ${SYSJITTER_THRESHOLD_NS}ns)"
@@ -63,8 +63,8 @@ run_phase() {
       ;;
     tune)
       log "Phase 3/6: apply AMD tuned profile and reboot"
-      ansible-playbook -i "${INVENTORY}" configure-housekeeping.yml \
-        -e install_dependencies_enabled=false -e amd_reboot_after_apply=true
+      ansible-playbook -i "${INVENTORY}" site.yml \
+        -e install_dependencies_enabled=false -e amd_low_latency_reboot_after_apply=true
       ;;
     verify)
       log "Phase 4/6: verify tuning"

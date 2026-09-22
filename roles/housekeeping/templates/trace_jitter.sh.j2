@@ -1,0 +1,68 @@
+#!/usr/bin/env bpftrace
+# {{ ansible_managed }}
+# Trace timer, IRQ, scheduler and RCU events on the isolated CPUs ({{ housekeeping_isolated_cores }}).
+{#- Build a bpftrace predicate from the cpulist, e.g. "2-11,14-23" ->
+    (cpu >= 2 && cpu <= 11) || (cpu >= 14 && cpu <= 23) #}
+{%- set ns = namespace(terms=[]) %}
+{%- for part in housekeeping_isolated_cores | string | split(',') %}
+{%-   set bounds = part | trim | split('-') %}
+{%-   if bounds | length == 2 %}
+{%-     set ns.terms = ns.terms + ['(cpu >= ' ~ bounds[0] ~ ' && cpu <= ' ~ bounds[1] ~ ')'] %}
+{%-   else %}
+{%-     set ns.terms = ns.terms + ['cpu == ' ~ bounds[0]] %}
+{%-   endif %}
+{%- endfor %}
+{%- set on_isolated = ns.terms | join(' || ') %}
+
+BEGIN
+{
+    printf("Tracing timer, irq, sched, and rcu events on CPUs {{ housekeeping_isolated_cores }}... Hit Ctrl-C to end.\n");
+    printf("%-18s %-4s %-6s %-16s %s\n", "TIME(ns)", "CPU", "PID", "COMM", "EVENT DETAILS");
+}
+
+/* --- HRTIMERS --- */
+
+tracepoint:timer:hrtimer_start
+/{{ on_isolated }}/
+{
+    printf("%-18lld %-4d %-6d %-16s hrtimer_start: func=%s expires=%llu ptr=%p\n",
+           nsecs, cpu, pid, comm, ksym(args->function), args->expires, args->hrtimer);
+}
+
+tracepoint:timer:hrtimer_expire_entry
+/{{ on_isolated }}/
+{
+    printf("%-18lld %-4d %-6d %-16s hrtimer_expire_entry: func=%s ptr=%p\n",
+           nsecs, cpu, pid, comm, ksym(args->function), args->hrtimer);
+}
+
+tracepoint:timer:hrtimer_cancel
+/{{ on_isolated }}/
+{
+    printf("%-18lld %-4d %-6d %-16s hrtimer_cancel: ptr=%p\n",
+           nsecs, cpu, pid, comm, args->hrtimer);
+}
+
+/* --- IRQ --- */
+tracepoint:irq:irq_handler_entry
+/{{ on_isolated }}/
+{
+    printf("%-18lld %-4d %-6d %-16s irq_entry: irq=%d name=%s\n",
+           nsecs, cpu, pid, comm, args->irq, args->name);
+}
+
+/* --- SCHEDULER --- */
+tracepoint:sched:sched_switch
+/{{ on_isolated }}/
+{
+    printf("%-18lld %-4d %-6d %-16s sched_switch: %s:%d -> %s:%d\n",
+           nsecs, cpu, pid, comm, args->prev_comm, args->prev_pid, args->next_comm, args->next_pid);
+}
+
+/* --- RCU --- */
+tracepoint:rcu:rcu_utilization
+/{{ on_isolated }}/
+{
+    printf("%-18lld %-4d %-6d %-16s rcu_utilization: %s\n",
+           nsecs, cpu, pid, comm, args->s);
+}

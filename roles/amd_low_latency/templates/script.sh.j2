@@ -1,0 +1,39 @@
+#!/usr/bin/bash
+# {{ ansible_managed }}
+# tuned script agent for the {{ amd_low_latency_tuned_profile_name }} profile (guide section 3.6).
+
+. /usr/lib/tuned/functions
+
+start() {
+    mkdir -p "${TUNED_tmpdir}/etc/systemd"
+    mkdir -p "${TUNED_tmpdir}/usr/lib/dracut/hooks/pre-udev"
+    cp /etc/systemd/system.conf "${TUNED_tmpdir}/etc/systemd/"
+    cp 00-tuned-pre-udev.sh "${TUNED_tmpdir}/usr/lib/dracut/hooks/pre-udev/"
+    setup_kvm_mod_low_latency
+    disable_ksm
+{% if amd_low_latency_solarflare_affinity_enabled | bool %}
+    # Steer Solarflare RSS IRQs (guide section 3.4). irqbalance runs in oneshot
+    # mode so it will not undo this placement.
+    if [ -x "{{ amd_low_latency_solarflare_sfcaffinity_bin }}" ]; then
+        "{{ amd_low_latency_solarflare_sfcaffinity_bin }}" {% if amd_low_latency_solarflare_affinity_cores | length > 0 %}--cores {{ amd_low_latency_solarflare_affinity_cores }} {% endif %}auto
+    fi
+{% endif %}
+{% for cmd in amd_low_latency_tuned_script_start_commands %}
+    {{ cmd }}
+{% endfor %}
+    return "$?"
+}
+
+stop() {
+    if [ "$1" = "full_rollback" ]
+    then
+        teardown_kvm_mod_low_latency
+        enable_ksm
+{% for cmd in amd_low_latency_tuned_script_stop_commands %}
+        {{ cmd }}
+{% endfor %}
+    fi
+    return "$?"
+}
+
+process $@

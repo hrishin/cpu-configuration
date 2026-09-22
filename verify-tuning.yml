@@ -1,69 +1,79 @@
 ---
 # Post-reboot validation of the AMD low-latency tuning (guide chapters 3.3, 3.7, 5).
 # Usage:
-#   ansible-playbook -i inventory.example verify-tuning.yml --limit remote
-#   ansible-playbook -i inventory.example verify-tuning.yml -e sysjitter_runtime=60 -e sysjitter_threshold_ns=300
+#   ansible-playbook verify-tuning.yml --limit remote
+#   ansible-playbook verify-tuning.yml -e sysjitter_runtime=60 -e sysjitter_threshold_ns=300
 - name: Verify AMD low-latency tuning
   hosts: all
-  become: yes
-  gather_facts: yes
+  become: true
+  gather_facts: true
   vars:
     sysjitter_runtime: 0          # seconds; 0 = skip the sysjitter run
     sysjitter_threshold_ns: 300   # guide uses 300 ns (1 min) and 500 ns (1 h) examples
     sysjitter_cores: "{{ isolated_cores }}"
+    sysjitter_bin: /usr/local/bin/sysjitter
+    verify_expected_cmdline_args:
+      - nohz_full=
+      - rcu_nocbs=
+      - rcu_nocb_poll
+      - processor.max_cstate=0
+      - amd_pstate=passive
+      - transparent_hugepage=never
+      - pcie_aspm=off
+    verify_sysctls:
+      - vm.nr_hugepages
+      - kernel.numa_balancing
+      - kernel.timer_migration
+      - kernel.sched_autogroup_enabled
+      - vm.stat_interval
+      - vm.swappiness
+      - vm.min_free_kbytes
   tasks:
-    - name: Active tuned profile
-      command: tuned-adm active
-      register: v_tuned_active
+    - name: Read the active tuned profile
+      ansible.builtin.command: tuned-adm active
+      register: verify_tuned_active
       changed_when: false
       failed_when: false
 
-    - name: tuned profile verification
-      command: tuned-adm verify
-      register: v_tuned_verify
+    - name: Run tuned-adm verify
+      ansible.builtin.command: tuned-adm verify
+      register: verify_tuned_verify
       changed_when: false
       failed_when: false
 
-    - name: Kernel command line
-      command: cat /proc/cmdline
-      register: v_cmdline
-      changed_when: false
-
-    - name: Check expected kernel arguments are present
-      set_fact:
-        v_missing_args: >-
-          {{ ['nohz_full=', 'rcu_nocbs=', 'rcu_nocb_poll', 'processor.max_cstate=0',
-              'amd_pstate=passive', 'transparent_hugepage=never', 'pcie_aspm=off']
-             | reject('in', v_cmdline.stdout) | list }}
-
-    - name: irqbalance configuration
-      command: grep -E '^(IRQBALANCE_ARGS|IRQBALANCE_ONESHOT|IRQBALANCE_BANNED_CPUS|IRQBALANCE_BANNED_CPULIST)' /etc/sysconfig/irqbalance
-      register: v_irqbalance
-      changed_when: false
-      failed_when: false
-
-    - name: Sysctl values
-      command: sysctl -n {{ item }}
+    - name: Read the kernel command line and workqueue mask
+      ansible.builtin.slurp:
+        src: "{{ item }}"
       loop:
-        - vm.nr_hugepages
-        - kernel.numa_balancing
-        - kernel.timer_migration
-        - kernel.sched_autogroup_enabled
-        - vm.stat_interval
-        - vm.swappiness
-        - vm.min_free_kbytes
-      register: v_sysctl
+        - /proc/cmdline
+        - /sys/devices/virtual/workqueue/cpumask
+      register: verify_files
+      failed_when: false
+
+    - name: Decode the kernel command line and workqueue mask
+      ansible.builtin.set_fact:
+        verify_cmdline: "{{ verify_files.results[0].content | default('') | b64decode | trim }}"
+        verify_wq_mask: "{{ verify_files.results[1].content | default('') | b64decode | trim }}"
+
+    - name: Check that the expected kernel arguments are present
+      ansible.builtin.set_fact:
+        verify_missing_args: "{{ verify_expected_cmdline_args | reject('in', verify_cmdline) | list }}"
+
+    - name: Read the irqbalance configuration
+      ansible.builtin.command: grep -E '^(IRQBALANCE_ARGS|IRQBALANCE_ONESHOT|IRQBALANCE_BANNED_CPUS|IRQBALANCE_BANNED_CPULIST)' /etc/sysconfig/irqbalance
+      register: verify_irqbalance
       changed_when: false
       failed_when: false
 
-    - name: Workqueue cpumask
-      command: cat /sys/devices/virtual/workqueue/cpumask
-      register: v_wq_mask
+    - name: Read the sysctl values
+      ansible.builtin.command: sysctl -n {{ item }}
+      loop: "{{ verify_sysctls }}"
+      register: verify_sysctl
       changed_when: false
       failed_when: false
 
-    - name: Threads present on isolated cores (guide 5.2)
-      shell: |
+    - name: List threads resident on the isolated cores (guide 5.2)
+      ansible.builtin.shell: |
         set -o pipefail
         ps -eLo psr,pid,ppid,class,pri,nice,rtprio,stat,wchan:14,comm | awk -v cores="{{ sysjitter_cores }}" '
           BEGIN {
@@ -76,33 +86,33 @@
         ' | sort -n
       args:
         executable: /bin/bash
-      register: v_threads
+      register: verify_threads
       changed_when: false
       failed_when: false
 
-    - name: Run sysjitter on isolated cores (guide 3.7 / 5.1)
-      command: >
-        /usr/local/bin/sysjitter --runtime {{ sysjitter_runtime }}
+    - name: Run sysjitter on the isolated cores (guide 3.7 / 5.1)
+      ansible.builtin.command: >
+        {{ sysjitter_bin }} --runtime {{ sysjitter_runtime }}
         --cores {{ sysjitter_cores }} {{ sysjitter_threshold_ns }}
-      register: v_sysjitter
+      register: verify_sysjitter
       changed_when: false
       failed_when: false
       when: sysjitter_runtime | int > 0
 
     - name: Report
-      debug:
+      ansible.builtin.debug:
         msg:
-          - "tuned: {{ v_tuned_active.stdout | default('n/a') }}"
-          - "tuned verify: {{ (v_tuned_verify.stdout_lines | default(['n/a'])) | last }}"
-          - "cmdline: {{ v_cmdline.stdout }}"
-          - "missing expected kernel args: {{ v_missing_args if v_missing_args | length > 0 else 'none' }}"
-          - "irqbalance: {{ v_irqbalance.stdout_lines | default([]) }}"
-          - "sysctl: {{ v_sysctl.results | map(attribute='item') | zip(v_sysctl.results | map(attribute='stdout')) | map('join', '=') | list }}"
-          - "workqueue cpumask: {{ v_wq_mask.stdout | default('n/a') }}"
-          - "threads on isolated cores ({{ sysjitter_cores }}): {{ v_threads.stdout_lines | default([]) | length }}"
-          - "{{ v_threads.stdout_lines | default([]) }}"
+          - "tuned: {{ verify_tuned_active.stdout | default('n/a') }}"
+          - "tuned verify: {{ (verify_tuned_verify.stdout_lines | default(['n/a'])) | last }}"
+          - "cmdline: {{ verify_cmdline }}"
+          - "missing expected kernel args: {{ verify_missing_args if verify_missing_args | length > 0 else 'none' }}"
+          - "irqbalance: {{ verify_irqbalance.stdout_lines | default([]) }}"
+          - "sysctl: {{ verify_sysctl.results | map(attribute='item') | zip(verify_sysctl.results | map(attribute='stdout')) | map('join', '=') | list }}"
+          - "workqueue cpumask: {{ verify_wq_mask or 'n/a' }}"
+          - "threads on isolated cores ({{ sysjitter_cores }}): {{ verify_threads.stdout_lines | default([]) | length }}"
+          - "{{ verify_threads.stdout_lines | default([]) }}"
 
-    - name: sysjitter results
-      debug:
-        msg: "{{ v_sysjitter.stdout_lines }}"
-      when: sysjitter_runtime | int > 0 and v_sysjitter.stdout is defined
+    - name: Show sysjitter results
+      ansible.builtin.debug:
+        msg: "{{ verify_sysjitter.stdout_lines }}"
+      when: sysjitter_runtime | int > 0 and verify_sysjitter.stdout is defined

@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description={{ amd_low_latency_oneshot_description }}
+After=tuned.service
+
+[Service]
+Type=oneshot
+ExecStart={{ amd_low_latency_oneshot_script_path }}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

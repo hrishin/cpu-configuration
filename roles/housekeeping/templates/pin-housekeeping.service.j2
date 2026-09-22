@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Pin kernel housekeeping threads and IRQs
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart={{ housekeeping_pin_script_path }}
+ExecStart={{ housekeeping_irq_affinity_script_path }}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

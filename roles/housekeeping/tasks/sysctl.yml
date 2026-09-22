@@ -1,0 +1,11 @@
+---
+- name: Apply and persist sysctl settings
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value | string }}"
+    sysctl_file: "{{ housekeeping_sysctl_file }}"
+    sysctl_set: true
+    reload: true
+  loop: "{{ housekeeping_sysctl_settings | combine(housekeeping_sysctl_overrides) | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"

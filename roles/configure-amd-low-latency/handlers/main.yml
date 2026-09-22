@@ -1,9 +1,0 @@
----
-- name: reload systemd
-  systemd:
-    daemon_reload: yes
-
-- name: restart irqbalance
-  systemd:
-    name: irqbalance
-    state: restarted

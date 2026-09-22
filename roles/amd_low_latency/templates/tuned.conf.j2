@@ -1,0 +1,82 @@
+# {{ ansible_managed }}
+# AMD low latency tuned configuration.
+# Based on "Low Latency Tuning for AMD EPYC 9005 CPU Powered Servers" (AMD pub 73314).
+#
+
+[main]
+summary=Optimise AMD platforms for CPU partitioning latency sensitive usage
+include={{ amd_low_latency_tuned_profile_include }}
+
+[variables]
+# User is responsible for updating variables.conf with variable content such as isolated_cores=X-Y
+include={{ amd_low_latency_tuned_variables_conf_path }}
+
+isolated_cores_assert_check = \\${isolated_cores}
+# Make sure isolated_cores is defined before any of the variables that
+# use it (such as assert1) are defined, so that child profiles can set
+# isolated_cores directly in the profile (tuned.conf)
+isolated_cores = ${isolated_cores}
+# Fail if isolated_cores are not set
+assert1=${f:assertion_non_equal:isolated_cores are set:${isolated_cores}:${isolated_cores_assert_check}}
+
+# tmpdir
+tmpdir=${f:strip:${f:exec:mktemp:-d}}
+# Non-isolated cores cpumask including offline cores
+isolated_cores_expanded=${f:cpulist_unpack:${isolated_cores}}
+isolated_cpumask=${f:cpulist2hex:${isolated_cores_expanded}}
+not_isolated_cores_expanded=${f:cpulist_invert:${isolated_cores_expanded}}
+isolated_cores_online_expanded=${f:cpulist_online:${isolated_cores}}
+not_isolated_cores_online_expanded=${f:cpulist_online:${not_isolated_cores_expanded}}
+not_isolated_cpumask=${f:cpulist2hex:${not_isolated_cores_expanded}}
+# Make sure no_balance_cores is defined before
+# no_balance_cores_expanded is defined, so that child profiles can set
+# no_balance_cores directly in the profile (tuned.conf)
+no_balance_cores=${no_balance_cores}
+no_balance_cores_expanded=${f:cpulist_unpack:${no_balance_cores}}
+
+# Fail if isolated_cores contains CPUs which are not online
+assert2=${f:assertion:isolated_cores contains online CPU(s):${isolated_cores_expanded}:${isolated_cores_online_expanded}}
+
+# isolcpus adjusted for all flags
+cmd_isolcpus=${f:regex_search_ternary:${no_balance_cores}:\s*[0-9]: isolcpus=nohz,managed_irq,domain,${no_balance_cores}:}
+
+[sysfs]
+/sys/bus/workqueue/devices/writeback/cpumask = ${not_isolated_cpumask}
+/sys/devices/virtual/workqueue/cpumask = ${not_isolated_cpumask}
+/sys/devices/virtual/workqueue/*/cpumask = ${not_isolated_cpumask}
+/sys/devices/system/machinecheck/machinecheck*/ignore_ce = 1
+
+[systemd]
+cpu_affinity=${not_isolated_cores_expanded}
+
+[irqbalance]
+banned_cpus=${isolated_cores}
+
+[script]
+priority=5
+script=${i:PROFILE_DIR}/script.sh
+
+[scheduler]
+isolated_cores=${isolated_cores}
+ps_blacklist=.*pmd.*;.*PMD.*;^DPDK;.*qemu-kvm.*;^contrail-vroute$;^lcore-slave-.*;^rte_mp_handle$;^rte_mp_async$;^eal-intr-thread$
+
+[sysctl]
+{% for key, value in (amd_low_latency_tuned_sysctl_settings | combine(amd_low_latency_tuned_sysctl_overrides)).items() %}
+{{ key }} = {{ value }}
+{% endfor %}
+# Kernel network buffer tuning for bursts, backlogs, slow start, etc (guide section 3.5).
+# Analyse and tailor to your needs; disabled by default per the guide notes.
+{% for key, value in amd_low_latency_tuned_network_sysctl_settings.items() %}
+{{ '' if amd_low_latency_tuned_network_sysctl_enabled | bool else '#' }}{{ key }} = {{ value }}
+{% endfor %}
+
+[bootloader]
+priority=10
+initrd_remove_dir=True
+initrd_dst_img=tuned-initrd.img
+initrd_add_dir=${tmpdir}
+{% set _cmdline = amd_low_latency_tuned_cmdline_base
+   + (['mitigations=off'] if amd_low_latency_tuned_cmdline_disable_mitigations | bool else [])
+   + (['selinux=0'] if amd_low_latency_tuned_cmdline_disable_selinux | bool else [])
+   + amd_low_latency_tuned_cmdline_extra %}
+cmdline_cpu_part=+{{ _cmdline | join(' ') }}

@@ -1,0 +1,20 @@
+---
+- name: Install tracing and profiling packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ install_dependencies_packages }}"
+  register: install_dependencies_pkg
+  failed_when:
+    - install_dependencies_pkg is failed
+    - not install_dependencies_ignore_package_errors | bool
+
+- name: Report packages that could not be installed
+  ansible.builtin.debug:
+    msg: "Package '{{ item.item }}' is not available in the enabled repositories; skipped."
+  loop: "{{ install_dependencies_pkg.results | selectattr('failed', 'defined') | selectattr('failed') | list }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Install sysjitter
+  ansible.builtin.import_tasks: sysjitter.yml

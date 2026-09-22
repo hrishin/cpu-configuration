@@ -1,0 +1,30 @@
+---
+# Apply the AMD EPYC 9005 low-latency tuning (AMD pub 73314).
+# Usage:
+#   ansible-playbook site.yml --limit remote
+#   ansible-playbook site.yml --tags tuned
+#   ansible-playbook site.yml -e amd_low_latency_reboot_after_apply=true
+- name: Configure AMD EPYC low-latency tuning
+  hosts: all
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Assert the target is an Enterprise Linux host
+      ansible.builtin.assert:
+        that: ansible_facts['os_family'] == 'RedHat'
+        fail_msg: "This playbook targets RHEL 9 and compatible distributions (grubby, tuned, dnf)."
+      tags: [always]
+
+  roles:
+    - role: install_dependencies
+      when: install_dependencies_enabled | default(true) | bool
+      tags: [dependencies]
+
+    - role: amd_low_latency
+      when: amd_low_latency_enabled | default(true) | bool
+      tags: [amd, tuned]
+
+    - role: housekeeping
+      when: housekeeping_enabled | default(true) | bool
+      tags: [housekeeping]

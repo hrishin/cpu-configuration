@@ -1,0 +1,35 @@
+---
+# Build cns-sysjitter from source; it is not packaged.
+
+- name: Install sysjitter build dependencies
+  ansible.builtin.package:
+    name: "{{ install_dependencies_sysjitter_build_packages }}"
+    state: present
+
+- name: Check out sysjitter sources
+  ansible.builtin.git:
+    repo: "{{ install_dependencies_sysjitter_repo }}"
+    dest: "{{ install_dependencies_sysjitter_src_dir }}"
+    version: "{{ install_dependencies_sysjitter_version }}"
+  register: install_dependencies_sysjitter_git
+
+- name: Check for an installed sysjitter binary
+  ansible.builtin.stat:
+    path: "{{ install_dependencies_sysjitter_bin }}"
+  register: install_dependencies_sysjitter_installed
+
+- name: Build sysjitter
+  ansible.builtin.command:
+    cmd: make all
+    chdir: "{{ install_dependencies_sysjitter_src_dir }}"
+  when: install_dependencies_sysjitter_git is changed or not install_dependencies_sysjitter_installed.stat.exists
+  changed_when: true
+
+- name: Install sysjitter binary
+  ansible.builtin.copy:
+    src: "{{ install_dependencies_sysjitter_src_dir }}/sysjitter"
+    dest: "{{ install_dependencies_sysjitter_bin }}"
+    remote_src: true
+    mode: "0755"
+    owner: root
+    group: root

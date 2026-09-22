@@ -1,20 +1,6 @@
 ---
-# Example configuration for remote hosts
-# This file demonstrates how to override settings for the 'remote' group
-
-# Enable all roles for remote hosts
-install_dependencies_enabled: true
-configure_amd_low_latency_enabled: true
-configure_housekeeping_enabled: true
-
-# Full AMD tuned profile on production hosts. Set amd_reboot_after_apply: true
-# to reboot automatically when the profile (and hence kernel cmdline) changes.
-amd_tuned_profile_enabled: true
-amd_irqbalance_oneshot: true
-amd_reboot_after_apply: false
-
-# tuned owns boot args + sysctl; keep the pin scripts/service for manual IRQ steering
-configure_housekeeping_kernel_boot_args: false
-configure_housekeeping_sysctl: false
-configure_housekeeping_scripts: true
-configure_housekeeping_service: true
+# [remote] group: production hosts. Full tuned profile; set
+# amd_low_latency_reboot_after_apply: true to reboot automatically when the
+# profile (and hence the kernel command line) changes.
+amd_low_latency_tuned_profile_enabled: true
+amd_low_latency_reboot_after_apply: false

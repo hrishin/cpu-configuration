@@ -1,0 +1,8 @@
+---
+profile: production
+exclude_paths:
+  - .git/
+  - collections/
+  - test/terraform/
+  - test/results/
+offline: true

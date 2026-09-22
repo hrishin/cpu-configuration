@@ -1,19 +1,6 @@
 ---
-# Example configuration for local hosts
-# This file demonstrates how to override settings for the 'local' group
-
-# Enable all roles for local testing
-install_dependencies_enabled: true
-configure_amd_low_latency_enabled: true
-configure_housekeeping_enabled: true
-
-# Skip anything that rewrites the bootloader on a local/test box (avoids a reboot
-# requirement). The tuned profile files are not deployed either, since
-# activation is what generates the kernel command line.
-amd_tuned_profile_enabled: false
-amd_irqbalance_oneshot: true
-
-configure_housekeeping_kernel_boot_args: false
-configure_housekeeping_sysctl: true
-configure_housekeeping_scripts: true
-configure_housekeeping_service: true
+# [local] group: a workstation or test VM. Skip anything that rewrites the
+# bootloader (the tuned profile generates the kernel command line on activation)
+# and apply the sysctls through sysctl.d instead.
+amd_low_latency_tuned_profile_enabled: false
+housekeeping_sysctl_enabled: true

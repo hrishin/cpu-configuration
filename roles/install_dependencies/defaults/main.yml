@@ -1,0 +1,23 @@
+---
+# Tracing/profiling tooling from the AMD guide (chapter 5) plus cpupower and lstopo.
+install_dependencies_packages:
+  - libbpf-tools
+  - bpftrace
+  - trace-cmd
+  - perf            # guide 5.4.1
+  - kernel-tools    # cpupower (guide 2.4)
+  - hwloc           # lstopo-no-graphics for NUMA/PCIe locality (guide 2.2)
+  - hwloc-gui       # lstopo
+  - grubby
+# Skip packages that are not available in the enabled repositories instead of failing.
+install_dependencies_ignore_package_errors: false
+
+# sysjitter (guide 3.7 / 5.1) is built from source.
+install_dependencies_sysjitter_repo: https://github.com/Xilinx-CNS/cns-sysjitter.git
+install_dependencies_sysjitter_version: master
+install_dependencies_sysjitter_src_dir: /usr/local/src/cns-sysjitter
+install_dependencies_sysjitter_bin: /usr/local/bin/sysjitter
+install_dependencies_sysjitter_build_packages:
+  - gcc
+  - make
+  - git

@@ -10,3 +10,5 @@ test/inventory/hosts.ini
 test/results/latest/
 # ansible
 *.retry
+# ansible-galaxy collection install -r requirements.yml (collections_path in ansible.cfg)
+collections/

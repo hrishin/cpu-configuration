@@ -1,0 +1,67 @@
+---
+# Deploy (or remove) a oneshot systemd unit that runs a templated script after tuned.
+# Parameters (set via include_tasks vars):
+#   amd_low_latency_oneshot_name         unit name, e.g. amd-cpufreq
+#   amd_low_latency_oneshot_description  unit Description=
+#   amd_low_latency_oneshot_script_src   template for the script
+#   amd_low_latency_oneshot_script_path  where the script is installed
+#   amd_low_latency_oneshot_enabled      false = stop, disable and remove the unit and script
+#   amd_low_latency_oneshot_packages     packages the script needs
+
+- name: Deploy {{ amd_low_latency_oneshot_name }}
+  when: amd_low_latency_oneshot_enabled | bool
+  block:
+    - name: Install packages required by {{ amd_low_latency_oneshot_name }}
+      ansible.builtin.package:
+        name: "{{ amd_low_latency_oneshot_packages }}"
+        state: present
+      when: amd_low_latency_oneshot_packages | length > 0
+
+    - name: Deploy the script for {{ amd_low_latency_oneshot_name }}
+      ansible.builtin.template:
+        src: "{{ amd_low_latency_oneshot_script_src }}"
+        dest: "{{ amd_low_latency_oneshot_script_path }}"
+        mode: "0755"
+        owner: root
+        group: root
+      register: amd_low_latency_oneshot_script
+
+    - name: Deploy the unit for {{ amd_low_latency_oneshot_name }}
+      ansible.builtin.template:
+        src: oneshot.service.j2
+        dest: /etc/systemd/system/{{ amd_low_latency_oneshot_name }}.service
+        mode: "0644"
+        owner: root
+        group: root
+      register: amd_low_latency_oneshot_unit
+
+    - name: Enable and start {{ amd_low_latency_oneshot_name }}
+      ansible.builtin.systemd_service:
+        name: "{{ amd_low_latency_oneshot_name }}"
+        enabled: true
+        state: "{{ 'restarted' if amd_low_latency_oneshot_script is changed else 'started' }}"
+        daemon_reload: "{{ amd_low_latency_oneshot_unit is changed }}"
+
+- name: Remove {{ amd_low_latency_oneshot_name }}
+  when: not amd_low_latency_oneshot_enabled | bool
+  block:
+    - name: Check for a stale unit for {{ amd_low_latency_oneshot_name }}
+      ansible.builtin.stat:
+        path: /etc/systemd/system/{{ amd_low_latency_oneshot_name }}.service
+      register: amd_low_latency_oneshot_stale
+
+    - name: Stop and disable {{ amd_low_latency_oneshot_name }}
+      ansible.builtin.systemd_service:
+        name: "{{ amd_low_latency_oneshot_name }}"
+        enabled: false
+        state: stopped
+      when: amd_low_latency_oneshot_stale.stat.exists
+
+    - name: Remove the unit and script for {{ amd_low_latency_oneshot_name }}
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/{{ amd_low_latency_oneshot_name }}.service
+        - "{{ amd_low_latency_oneshot_script_path }}"
+      notify: Reload systemd

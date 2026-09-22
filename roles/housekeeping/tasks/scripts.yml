@@ -1,0 +1,15 @@
+---
+- name: Deploy the housekeeping scripts
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - { src: pin_housekeeping.sh.j2, dest: "{{ housekeeping_pin_script_path }}" }
+    - { src: set_irq_affinity.sh.j2, dest: "{{ housekeeping_irq_affinity_script_path }}" }
+    - { src: trace_jitter.sh.j2, dest: "{{ housekeeping_trace_jitter_script_path }}" }
+  loop_control:
+    label: "{{ item.dest }}"
+  register: housekeeping_scripts_deployed

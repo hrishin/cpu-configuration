@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Apply per-core frequency limits with cpupower (guide section 2.4, amd_pstate=passive).
+set -uo pipefail
+
+if ! command -v cpupower >/dev/null 2>&1; then
+  echo "cpupower not found (install kernel-tools)" >&2
+  exit 1
+fi
+
+rc=0
+{% for p in amd_low_latency_cpufreq_profiles %}
+{% set _args = [] %}
+{% if p.governor is defined %}{% set _ = _args.append('-g ' ~ p.governor) %}{% endif %}
+{% if p.min is defined %}{% set _ = _args.append('-d ' ~ p.min) %}{% endif %}
+{% if p.max is defined %}{% set _ = _args.append('-u ' ~ p.max) %}{% endif %}
+echo "cpupower -c {{ p.cpus }} frequency-set {{ _args | join(' ') }}"
+cpupower -c "{{ p.cpus }}" frequency-set {{ _args | join(' ') }} || rc=1
+{% endfor %}
+exit "${rc}"

@@ -1,0 +1,53 @@
+---
+# AMD EPYC 9005 low-latency tuning (AMD pub 73314).
+# Each component is guarded by its own flag; see defaults/main.yml.
+
+- name: Assert the CPU layout and platform are usable
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'RedHat'
+      - amd_low_latency_isolated_cores | string | length > 0
+    fail_msg: >-
+      amd_low_latency needs an Enterprise Linux host (tuned, grubby) and
+      amd_low_latency_isolated_cores set (e.g. '2-11,14-23').
+
+- name: Deploy and activate the AMD tuned CPU partitioning profile
+  ansible.builtin.import_tasks: tuned.yml
+  when: amd_low_latency_tuned_profile_enabled | bool
+
+- name: Configure irqbalance in oneshot mode
+  ansible.builtin.import_tasks: irqbalance.yml
+  when: amd_low_latency_irqbalance_oneshot | bool
+
+- name: Configure Solarflare adapter options
+  ansible.builtin.import_tasks: solarflare.yml
+
+- name: Configure per-core CPU frequency limits (cpupower)
+  ansible.builtin.include_tasks: oneshot_service.yml
+  vars:
+    amd_low_latency_oneshot_name: amd-cpufreq
+    amd_low_latency_oneshot_description: Apply AMD per-core CPU frequency limits (cpupower)
+    amd_low_latency_oneshot_script_src: amd_cpufreq.sh.j2
+    amd_low_latency_oneshot_script_path: "{{ amd_low_latency_cpufreq_script_path }}"
+    amd_low_latency_oneshot_enabled: "{{ amd_low_latency_cpufreq_profiles | length > 0 }}"
+    amd_low_latency_oneshot_packages: [kernel-tools]
+
+- name: Configure L3 cache allocation (resctrl)
+  ansible.builtin.include_tasks: oneshot_service.yml
+  vars:
+    amd_low_latency_oneshot_name: amd-resctrl
+    amd_low_latency_oneshot_description: Configure AMD L3 cache allocation (resctrl / CAT)
+    amd_low_latency_oneshot_script_src: amd_resctrl.sh.j2
+    amd_low_latency_oneshot_script_path: "{{ amd_low_latency_resctrl_script_path }}"
+    amd_low_latency_oneshot_enabled: "{{ amd_low_latency_resctrl_groups | length > 0 }}"
+    amd_low_latency_oneshot_packages: []
+
+- name: Reboot to apply kernel command line changes
+  ansible.builtin.reboot:
+    msg: Rebooting to apply AMD low-latency kernel parameters
+    reboot_timeout: 600
+  when:
+    - amd_low_latency_reboot_after_apply | bool
+    - amd_low_latency_tuned_profile_enabled | bool
+    - amd_low_latency_tuned_profile_applied is changed or amd_low_latency_tuned_bls_patch is changed
+    - ansible_connection | default('ssh') != 'local'

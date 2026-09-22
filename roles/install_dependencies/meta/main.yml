@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  author: hrishin
+  description: Tracing and profiling tooling for AMD EPYC low-latency work (perf, bpftrace, trace-cmd, sysjitter)
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags: [amd, latency, tracing]
+dependencies: []

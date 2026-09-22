@@ -1,0 +1,53 @@
+---
+# Defaults for the housekeeping role: the pre-tuned way of applying the AMD
+# low-latency settings (grubby boot args, sysctl.d) plus the pin scripts and
+# service that are still useful for manual IRQ steering.
+
+# --- Component flags -------------------------------------------------------
+# Boot args and sysctls are owned by the amd_low_latency tuned profile; enable
+# these two only when that profile is disabled, or you get duplicate entries.
+housekeeping_boot_args_enabled: false
+housekeeping_sysctl_enabled: false
+housekeeping_scripts_enabled: true
+housekeeping_service_enabled: true
+
+# --- CPU layout (normally mapped from group_vars/all.yml) ------------------
+housekeeping_isolated_cores: "2-11,14-23"
+housekeeping_no_balance_cores: "{{ housekeeping_isolated_cores }}"
+housekeeping_cpus: "0,1,12,13"
+
+# --- Kernel boot arguments (guide 3.3, grubby path) ------------------------
+# Mirrors what the tuned profile generates minus tuned.non_isolcpus.
+housekeeping_boot_args: >-
+  nohz=on
+  {{ 'isolcpus=nohz,managed_irq,domain,' ~ housekeeping_no_balance_cores if housekeeping_no_balance_cores | length > 0 else '' }}
+  nohz_full={{ housekeeping_isolated_cores }}
+  rcu_nocbs={{ housekeeping_isolated_cores }}
+  rcu_nocb_poll
+  irqaffinity={{ housekeeping_cpus }}
+  skew_tick=1 tsc=reliable rcupdate.rcu_normal_after_boot=1 rcutree.nohz_full_patience_delay=1000
+  processor.max_cstate=0 amd_pstate=passive mce=ignore_ce nowatchdog nosoftlockup nmi_watchdog=0
+  transparent_hugepage=never pcie_aspm=off audit=0 amd_iommu=off iommu=off iomem=relaxed nomodeset
+
+# --- sysctl (guide 3.3, sysctl.d path) -------------------------------------
+housekeeping_sysctl_file: /etc/sysctl.d/99-housekeeping.conf
+housekeeping_sysctl_settings:
+  vm.nr_hugepages: 5000
+  kernel.hung_task_timeout_secs: 600
+  kernel.numa_balancing: 0
+  kernel.timer_migration: 1
+  kernel.sched_autogroup_enabled: 0
+  vm.stat_interval: 300
+  vm.swappiness: 0
+  vm.zone_reclaim_mode: 0
+  vm.min_free_kbytes: 1024000
+# Merged over housekeeping_sysctl_settings.
+housekeeping_sysctl_overrides: {}
+
+# --- Scripts and service ---------------------------------------------------
+housekeeping_pin_script_path: /usr/local/sbin/pin_housekeeping.sh
+housekeeping_irq_affinity_script_path: /usr/local/sbin/set_irq_affinity.sh
+housekeeping_trace_jitter_script_path: /usr/local/bin/trace_jitter.sh
+# Interface whose MSI-X vectors set_irq_affinity.sh pins by default.
+housekeeping_irq_interface: eth0
+housekeeping_service_name: pin-housekeeping

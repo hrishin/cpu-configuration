@@ -1,0 +1,29 @@
+---
+# grubby appends missing arguments and replaces changed values, so only run it
+# when the default kernel is actually missing something.
+
+- name: Read the default kernel's boot arguments
+  ansible.builtin.command: grubby --info=DEFAULT
+  register: housekeeping_grubby_info
+  changed_when: false
+
+- name: Work out which boot arguments are missing
+  ansible.builtin.set_fact:
+    housekeeping_missing_boot_args: >-
+      {{ housekeeping_boot_args | split
+         | difference(housekeeping_grubby_info.stdout | regex_search('args="([^"]*)"', '\1') | default([''], true) | first | split) }}
+
+- name: Add the boot arguments to every installed kernel
+  ansible.builtin.command:
+    argv:
+      - grubby
+      - --update-kernel=ALL
+      - "--args={{ housekeeping_boot_args | split | join(' ') }}"
+  when: housekeeping_missing_boot_args | length > 0
+  changed_when: true
+
+- name: Report the boot argument state
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Added ' ~ housekeeping_missing_boot_args | join(' ') ~ ' - reboot required.'
+         if housekeeping_missing_boot_args | length > 0 else 'Boot arguments already present.' }}

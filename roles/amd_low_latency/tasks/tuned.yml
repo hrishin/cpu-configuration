@@ -1,0 +1,123 @@
+---
+# Chapter 3: AMD tuned CPU partitioning profile.
+
+- name: Install tuned and related packages
+  ansible.builtin.package:
+    name: "{{ amd_low_latency_tuned_packages }}"
+    state: present
+
+- name: Check whether tuned uses the newer profiles/ layout (tuned >= 2.23)
+  ansible.builtin.stat:
+    path: /usr/lib/tuned/profiles
+  register: amd_low_latency_tuned_new_layout
+
+- name: Resolve the tuned profile directory
+  ansible.builtin.set_fact:
+    amd_low_latency_tuned_profile_path: >-
+      {{ (amd_low_latency_tuned_profiles_dir
+          if amd_low_latency_tuned_profiles_dir | length > 0
+          else ('/etc/tuned/profiles' if amd_low_latency_tuned_new_layout.stat.exists else '/etc/tuned'))
+         ~ '/' ~ amd_low_latency_tuned_profile_name }}
+
+- name: Create the profile directory
+  ansible.builtin.file:
+    path: "{{ amd_low_latency_tuned_profile_path }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Deploy the profile files
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode }}"
+    owner: root
+    group: root
+  loop:
+    - { src: tuned.conf.j2, dest: "{{ amd_low_latency_tuned_profile_path }}/tuned.conf", mode: "0644" }
+    - { src: script.sh.j2, dest: "{{ amd_low_latency_tuned_profile_path }}/script.sh", mode: "0755" }
+    - { src: 00-tuned-pre-udev.sh.j2, dest: "{{ amd_low_latency_tuned_profile_path }}/00-tuned-pre-udev.sh", mode: "0755" }
+    - { src: cpu-partitioning-variables.conf.j2, dest: "{{ amd_low_latency_tuned_variables_conf_path }}", mode: "0644" }
+  loop_control:
+    label: "{{ item.dest }}"
+  register: amd_low_latency_tuned_files
+
+- name: Enable and start tuned
+  ansible.builtin.systemd_service:
+    name: tuned
+    enabled: true
+    state: started
+
+- name: Check the active tuned profile
+  ansible.builtin.command: tuned-adm active
+  register: amd_low_latency_tuned_active
+  changed_when: false
+  failed_when: false
+
+- name: Activate the tuned profile {{ amd_low_latency_tuned_profile_name }}
+  ansible.builtin.command: tuned-adm profile {{ amd_low_latency_tuned_profile_name }}
+  register: amd_low_latency_tuned_profile_applied
+  changed_when: true
+  when: >-
+    amd_low_latency_tuned_profile_name not in (amd_low_latency_tuned_active.stdout | default(''))
+    or amd_low_latency_tuned_files is changed
+
+# Cloud images (Rocky/Alma/RHEL AMIs, GenericCloud qcow2) regenerate /etc/machine-id on
+# first boot, but their BLS entries keep the image-build machine-id prefix. tuned's
+# bootloader plugin patches entries via /usr/lib/kernel/install.d/92-tuned.install with
+# KERNEL_INSTALL_MACHINE_ID=$(cat /etc/machine-id), matches nothing, and silently leaves
+# $tuned_params out of the boot entry. Re-run the hook per actual entry prefix.
+- name: Check for BLS boot entries and the tuned kernel-install hook
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /boot/loader/entries
+    - /usr/lib/kernel/install.d/92-tuned.install
+  register: amd_low_latency_tuned_bls_paths
+
+- name: Ensure BLS entries reference $tuned_params / $tuned_initrd
+  ansible.builtin.shell: |
+    set -e
+    changed=0
+    cd /boot/loader/entries
+    for f in *.conf; do
+      [ -f "$f" ] || continue
+      case "$f" in *-rescue.conf) continue ;; esac
+      if grep -q '^\s*options\s.*\$tuned_params' "$f" && grep -q '^\s*initrd\s.*\$tuned_initrd' "$f"; then
+        continue
+      fi
+      KERNEL_INSTALL_MACHINE_ID="${f%%-*}" /usr/lib/kernel/install.d/92-tuned.install add
+      changed=1
+    done
+    for f in *.conf; do
+      case "$f" in *-rescue.conf) continue ;; esac
+      grep -q '^\s*options\s.*\$tuned_params' "$f" || { echo "BLS entry $f still lacks \$tuned_params" >&2; exit 1; }
+    done
+    echo "bls_changed=$changed"
+  args:
+    executable: /bin/bash
+  register: amd_low_latency_tuned_bls_patch
+  changed_when: "'bls_changed=1' in amd_low_latency_tuned_bls_patch.stdout"
+  when: amd_low_latency_tuned_bls_paths.results | map(attribute='stat.exists') | list == [true, true]
+
+- name: Read the resulting tuned boot command line
+  ansible.builtin.slurp:
+    src: /etc/tuned/bootcmdline
+  register: amd_low_latency_tuned_bootcmdline
+  failed_when: false
+
+- name: Show tuned status
+  vars:
+    amd_low_latency_tuned_changed: >-
+      {{ amd_low_latency_tuned_profile_applied is changed or amd_low_latency_tuned_bls_patch is changed }}
+  ansible.builtin.debug:
+    msg:
+      - >-
+        Active profile: {{ amd_low_latency_tuned_active.stdout | default('unknown') }}
+        {{ '(re-applied)' if amd_low_latency_tuned_profile_applied is changed else '' }}
+      - "Profile directory: {{ amd_low_latency_tuned_profile_path }}"
+      - "isolated_cores={{ amd_low_latency_isolated_cores }} no_balance_cores={{ amd_low_latency_no_balance_cores }}"
+      - "tuned bootcmdline: {{ (amd_low_latency_tuned_bootcmdline.content | default('') | b64decode | trim) or 'n/a' }}"
+      - "BLS entries patched: {{ 'yes' if amd_low_latency_tuned_bls_patch is changed else 'no (already referenced $tuned_params, or not a BLS host)' }}"
+      - "{{ 'A reboot is required for kernel command line changes to take effect.' if amd_low_latency_tuned_changed | bool else 'No profile change.' }}"

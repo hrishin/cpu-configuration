@@ -1,0 +1,21 @@
+---
+- name: Assert the platform is supported
+  ansible.builtin.assert:
+    that: ansible_facts['os_family'] == 'RedHat'
+    fail_msg: The housekeeping role relies on grubby and sysctl.d layouts from Enterprise Linux.
+
+- name: Apply kernel boot arguments with grubby
+  ansible.builtin.import_tasks: boot_args.yml
+  when: housekeeping_boot_args_enabled | bool
+
+- name: Apply sysctl settings
+  ansible.builtin.import_tasks: sysctl.yml
+  when: housekeeping_sysctl_enabled | bool
+
+- name: Deploy the pin and trace scripts
+  ansible.builtin.import_tasks: scripts.yml
+  when: housekeeping_scripts_enabled | bool
+
+- name: Deploy the pin-housekeeping service
+  ansible.builtin.import_tasks: service.yml
+  when: housekeeping_service_enabled | bool

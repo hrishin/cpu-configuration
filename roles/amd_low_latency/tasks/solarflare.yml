@@ -1,0 +1,37 @@
+---
+# Section 3.4 / Chapter 4: Solarflare X4 RSS and IRQ affinity.
+# sfcaffinity_config itself is invoked from the tuned profile script.sh.
+
+- name: Check for sfcaffinity_config
+  ansible.builtin.stat:
+    path: "{{ amd_low_latency_solarflare_sfcaffinity_bin }}"
+  register: amd_low_latency_solarflare_bin
+  when: amd_low_latency_solarflare_affinity_enabled | bool
+
+- name: Warn if sfcaffinity_config is missing
+  ansible.builtin.debug:
+    msg: >-
+      {{ amd_low_latency_solarflare_sfcaffinity_bin }} not found; install Onload/sfutils.
+      The tuned script will skip IRQ steering until it exists.
+  when:
+    - amd_low_latency_solarflare_affinity_enabled | bool
+    - not amd_low_latency_solarflare_bin.stat.exists
+
+# The sfc module reads this on load; reload the driver or reboot for it to apply.
+- name: Set the sfc RSS channel count via modprobe
+  ansible.builtin.copy:
+    content: |
+      # {{ ansible_managed }}
+      # Reduce RSS channels; tune to your kernel vs Onload/TCPDirect/ef_vi traffic mix.
+      options sfc rss_cpus={{ amd_low_latency_solarflare_rss_cpus }}
+    dest: "{{ amd_low_latency_solarflare_modprobe_conf }}"
+    mode: "0644"
+    owner: root
+    group: root
+  when: amd_low_latency_solarflare_rss_cpus | string | length > 0
+
+- name: Remove the sfc RSS modprobe override when unset
+  ansible.builtin.file:
+    path: "{{ amd_low_latency_solarflare_modprobe_conf }}"
+    state: absent
+  when: amd_low_latency_solarflare_rss_cpus | string | length == 0

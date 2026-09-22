@@ -1,0 +1,17 @@
+---
+- name: Deploy the unit for {{ housekeeping_service_name }}
+  ansible.builtin.template:
+    src: pin-housekeeping.service.j2
+    dest: /etc/systemd/system/{{ housekeeping_service_name }}.service
+    mode: "0644"
+    owner: root
+    group: root
+  register: housekeeping_service_unit
+
+# The unit is a oneshot with RemainAfterExit, so re-run it when its scripts changed.
+- name: Enable and start {{ housekeeping_service_name }}
+  ansible.builtin.systemd_service:
+    name: "{{ housekeeping_service_name }}"
+    enabled: true
+    state: "{{ 'restarted' if (housekeeping_scripts_deployed | default({})) is changed else 'started' }}"
+    daemon_reload: "{{ housekeeping_service_unit is changed }}"

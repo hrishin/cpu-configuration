@@ -5,7 +5,7 @@
 # AWS numbers SMT siblings as (i, i+96). The guide's BIOS table disables SMT; on
 # EC2 metal there is no BIOS access, so nosmt on the kernel cmdline is the
 # equivalent and leaves CPUs 0-95 online after reboot.
-amd_tuned_cmdline_extra:
+amd_low_latency_tuned_cmdline_extra:
   - nosmt
 
 # One CCD's worth of cores on socket 0 (Genoa: 8 cores per CCD). Confirm with
@@ -17,14 +17,14 @@ hk_cpus: "0-7,16-95"
 
 # Full guide profile; reboot as part of the tuning run so the benchmark script
 # can continue unattended.
-configure_amd_low_latency_enabled: true
-amd_tuned_profile_enabled: true
-amd_irqbalance_oneshot: true
-amd_reboot_after_apply: true
+amd_low_latency_enabled: true
+amd_low_latency_tuned_profile_enabled: true
+amd_low_latency_irqbalance_oneshot: true
+amd_low_latency_reboot_after_apply: true
 
 # Keep the measurement to what the guide prescribes; the legacy pin scripts
 # target eth0 IRQs which don't exist on ENA anyway.
-configure_housekeeping_enabled: false
+housekeeping_enabled: false
 
 # sysjitter defaults for test/benchmark.yml and verify-tuning.yml
 sysjitter_threshold_ns: 300
