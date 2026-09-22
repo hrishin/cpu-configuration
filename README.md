@@ -261,35 +261,124 @@ echo > trace; echo 1 > tracing_on; sleep 60; echo 0 > tracing_on; cat trace
 perf record -C 42 -e sched:sched_switch,sched:sched_waking --call-graph dwarf -- sleep 300
 ```
 
+## Optimization snapshot
+
+Everything the profile changes, grouped by layer, with one line on why. BIOS items are in
+[their own table](#bios-settings-guide-61). Defaults assume `isolated_cores=2-11,14-23`,
+`hk_cpus=0,1,12,13`.
+
+### Kernel command line (tuned `[bootloader]`, guide 3.3)
+
+| Argument | Effect |
+|---|---|
+| `nohz=on` | enable dynamic ticks (base for `nohz_full`) |
+| `nohz_full=<isolated>` | stop the scheduler tick on a core running exactly one task |
+| `rcu_nocbs=<isolated>` | move RCU callbacks off isolated cores to `rcuo*` threads |
+| `rcu_nocb_poll` | `rcuo` threads poll instead of being woken by the isolated core |
+| `isolcpus=nohz,managed_irq,domain,<no_balance>` | remove cores from scheduler domains; keep managed IRQs off them |
+| `tuned.non_isolcpus=<mask>` | housekeeping mask consumed by the dracut workqueue hook |
+| `processor.max_cstate=0` | cap idle at C1: no C6 exit latency, no cold caches |
+| `amd_pstate=passive` | Linux governor drives CPPC frequency hints |
+| `mce=ignore_ce` | no interrupts or logging for corrected machine-check errors |
+| `nowatchdog` `nosoftlockup` `nmi_watchdog=0` | remove periodic watchdog NMIs and timers |
+| `transparent_hugepage=never` | no THP compaction or `khugepaged` stalls |
+| `pcie_aspm=off` | kernel never enables PCIe link power saving |
+| `audit=0` | no audit hooks on every syscall |
+| `amd_iommu=off` `iommu=off` | no IOMMU translation on the NIC DMA path |
+| `iomem=relaxed` | allow user-space MMIO access (ef_vi / PIO) |
+| `nomodeset` | no KMS graphics driver and its interrupts |
+| inherited `skew_tick=1` | stagger ticks across cores to avoid lock contention |
+| inherited `tsc=reliable` | trust the TSC clocksource; skip the clocksource watchdog |
+| inherited `rcupdate.rcu_normal_after_boot=1` | normal (not expedited) RCU grace periods after boot |
+| inherited `rcutree.nohz_full_patience_delay=1000` | tolerate 1 s before RCU forces a tick on `nohz_full` cores |
+| opt-in `mitigations=off` | drop Spectre/MDS mitigations (security trade-off) |
+| opt-in `selinux=0` | no SELinux hooks (security trade-off) |
+| bench host `nosmt` | offline SMT siblings where there is no BIOS access (EC2) |
+
+### Sysctls (tuned `[sysctl]`)
+
+| Sysctl | Value | Effect |
+|---|---|---|
+| `vm.nr_hugepages` | 5000 | 10 GB of 2 MB pages for Onload/TCPDirect buffers, no page faults |
+| `kernel.hung_task_timeout_secs` | 600 | fewer hung-task checker wakeups |
+| `kernel.numa_balancing` | 0 | no automatic NUMA page migration or faults |
+| `kernel.timer_migration` | 1 | migrate timers from idle/isolated cores to housekeeping |
+| `kernel.sched_autogroup_enabled` | 0 | no per-session scheduling groups distorting priorities |
+| `vm.stat_interval` | 300 | vmstat updater every 5 min instead of every second |
+| `vm.swappiness` | 0 | drop file cache before swapping anonymous memory |
+| `vm.zone_reclaim_mode` | 0 | allocate remote memory rather than reclaim locally |
+| `vm.min_free_kbytes` | 1024000 | 1 GB reserve so allocations avoid direct reclaim |
+| inherited `net.core.busy_read` / `busy_poll` | 50 | kernel-path sockets busy-poll the NIC queue |
+| opt-in `net.core.rmem_max` / `wmem_max` 32 MB, `netdev_max_backlog` 10000, `tcp_slow_start_after_idle` 0 | off | bigger kernel socket buffers for bursty kernel-path traffic (guide 3.5) |
+
+### Runtime placement (tuned plugins and role tasks)
+
+| Mechanism | Effect |
+|---|---|
+| `[sysfs]` workqueue and writeback cpumask = housekeeping | unbound kernel workqueues never run on isolated cores |
+| `[sysfs]` `machinecheck*/ignore_ce=1` | per-CPU corrected-error polling off |
+| `[systemd] cpu_affinity=<housekeeping>` | every systemd-spawned service starts pinned off the isolated set |
+| `[irqbalance] banned_cpus=<isolated>` | irqbalance never places an IRQ on isolated cores |
+| `IRQBALANCE_ARGS="--oneshot"` | irqbalance cleans cores once per boot then exits, so manual steering sticks |
+| `[scheduler] isolated_cores` + `ps_blacklist` | tuned moves existing threads off isolated cores (PMD/DPDK-style names exempt) |
+| `script.sh`: `disable_ksm` | no KSM page-merging scans |
+| `script.sh`: `setup_kvm_mod_low_latency` | KVM halt-poll parameters if the module is present |
+| `00-tuned-pre-udev.sh` dracut hook | apply the workqueue mask before udev floods early boot |
+| `sfcaffinity_config --cores <n> auto` (opt-in) | pin Solarflare RSS IRQs next to, not on, the consuming cores |
+| `options sfc rss_cpus=<n>` (opt-in) | fewer NIC queues; split kernel vs bypass traffic |
+| BLS `$tuned_params` patch | make cloud images actually boot with the tuned command line |
+
+### Frequency and cache (opt-in, guide 2.4 / 2.6)
+
+| Mechanism | Effect |
+|---|---|
+| `amd-cpufreq.service`: `cpupower -c <hk> frequency-set -d 2.4GHz -u 3.3GHz` | cap housekeeping cores to leave thermal and power headroom |
+| `cpupower -c <isolated> frequency-set -g performance` | isolated cores request the top P-state constantly |
+| `amd-resctrl.service`: `L3:0=00ff` / `L3:0=ff00` CAT groups | partition L3 ways so housekeeping cannot evict the hot set |
+
+### Measured effect
+
+Bare-metal spot run, c7a.metal-48xl (2 x EPYC 9R14), Rocky 9, cores 8-15 isolated, sysjitter
+300 s at a 300 ns threshold (`test/results/run-20260920T141835Z/compare.txt`):
+
+| Metric (per isolated core) | Baseline | Tuned |
+|---|---|---|
+| Interrupts / s | ~1000 (the 1 kHz tick) | 2-6 |
+| Mean interruption | 2.6-3.1 us | 0.32-0.41 us |
+| p99 interruption | 7.5-8.9 us | 0.36-0.44 us |
+| Max interruption | 178-363 us | 0.4-0.5 us on six cores; 9, 21 and 47 us outliers on three |
+
+The remaining outliers are what `osnoise`/`timerlat` are for (see Verification).
+
 ## BIOS settings (guide 6.1)
 
 Not automatable from the OS - set these in the platform BIOS before applying the profile:
 
-| Setting | Value |
-|---|---|
-| SMT Control | Disabled |
-| Global C-State Control | Enabled (DF C-states disabled; OS controls) |
-| Core Performance Boost | Enabled |
-| Prefetchers | Enabled |
-| NUMA Per Socket (NPS) | 4 (test 1/2/4) |
-| 4-Link xGMI Max Speed | 32 Gbps (2-socket) |
-| SDCI | Enabled |
-| Periodic Directory Rinse | Adaptive (Blended) |
-| Determinism Control / Enable | Manual / Power |
-| APBDIS | 1 |
-| DF Pstate | 0 |
-| Power Profile Selection | Max IO perf mode |
-| DF Pstate FREQ optimizer | Disabled |
-| DF Cstates | Disabled |
-| GMI Folding | Disabled |
-| CPPC | Enabled |
-| PCIe Idle Power Setting | Optimize for latency |
-| ASPM Control | Disabled |
-| IOMMU | Disabled |
-| Enable 2 SPC (Gen4/Gen5) | Enable |
-| SRIOV | Disabled |
-| Memory Speed | 5600 (1DPC) / 3600 (2DPC) if PPT disabled |
-| PPT DDR5 training | Disable |
+| Setting | Value | Why |
+|---|---|---|
+| SMT Control | Disabled | one thread per core; no sibling stealing the pipeline or L1 |
+| Global C-State Control | Enabled (DF C-states disabled; OS controls) | expose C-states so the OS can cap them at C1 |
+| Core Performance Boost | Enabled | let isolated cores reach boost clocks |
+| Prefetchers | Enabled | keep hardware prefetch for streaming data |
+| NUMA Per Socket (NPS) | 4 (test 1/2/4) | smaller NUMA domains, memory local to the CCD |
+| 4-Link xGMI Max Speed | 32 Gbps (2-socket) | fastest socket interconnect |
+| SDCI | Enabled | NIC can inject RX data into L2 (X4 + firmware) |
+| Periodic Directory Rinse | Adaptive (Blended) | fewer probe-filter stalls |
+| Determinism Control / Enable | Manual / Power | consistent frequency rather than power-capped variability |
+| APBDIS | 1 | disable algorithmic performance boost; fabric stays at a fixed P-state |
+| DF Pstate | 0 | Data Fabric locked at its highest clock |
+| Power Profile Selection | Max IO perf mode | favour PCIe/IO latency over power |
+| DF Pstate FREQ optimizer | Disabled | no dynamic fabric frequency scaling |
+| DF Cstates | Disabled | fabric never sleeps; no wake-up penalty on memory or IO |
+| GMI Folding | Disabled | keep die-to-fabric links at full width |
+| CPPC | Enabled | fine-grained performance hints for `amd_pstate` |
+| PCIe Idle Power Setting | Optimize for latency | no PCIe link low-power states |
+| ASPM Control | Disabled | no L0s/L1 link exit latency |
+| IOMMU | Disabled | no DMA remapping on the NIC path |
+| Enable 2 SPC (Gen4/Gen5) | Enable | two symbols per clock on PCIe lanes |
+| SRIOV | Disabled | no VF resource carving; PF only |
+| Memory Speed | 5600 (1DPC) / 3600 (2DPC) if PPT disabled | maximum rated DRAM clock |
+| PPT DDR5 training | Disable | skip power-bounded memory training |
 
 ## Notes
 
